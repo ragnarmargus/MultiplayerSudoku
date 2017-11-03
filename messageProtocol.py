@@ -13,7 +13,7 @@ REQ_DICT = {
 
 
 # replies
-REP_CURRENT_SESSIONS = '0'  #REPnr:[sessName|currentPlayerNr|maxPlayerNr, ...]+term
+REP_CURRENT_SESSIONS = '0'  #REPnr:[sessName-currentPlayerNr/maxPlayerNr, ...]+term
 REP_CURRENT_PLAYERS = '1'   #REPnr:[nickname|score, ...]+term
 REP_TABLE_UPDATE = '2'      #REPnr:sudokuTable(81 int)+term
 REP_TABLE_SUCCESS = '3'     #REPnr:sudokuTable(81 int)+term
