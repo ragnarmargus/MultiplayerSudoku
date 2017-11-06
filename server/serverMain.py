@@ -1,11 +1,46 @@
+import logging
+FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
+logging.basicConfig(level=logging.DEBUG,format=FORMAT)
+LOG = logging.getLogger()
+
+import os,sys,inspect
+sys.path.insert(1, os.path.join(sys.path[0], '..'))
+from messageProtocol import *
+from sessionClass import *
+from clientHandler import *
+from threading import Thread, Lock, currentThread
+
+from socket import AF_INET, SOCK_STREAM, socket
+from socket import error as soc_err
 
 class serverClass(object):
-    def init(self):
+    def __init__(self):
+        self.lobbyList = []
+        self.lobbyListLock = Lock()
+        
         self.clientListLock = Lock()
         self.clientList = []
 
         self.sessionListLock = Lock()
         self.sessionList = []
+
+    def lobbyThread(self):
+        with self.sessionListLock:
+            self.sessionList = filter(lambda x: len(x.clients)!=0, self.sessionList)
+            map(lambda x: x.send_notification(msg), joined)
+
+    def removeMe(self):
+        caller = currentThread()
+        if caller in self.clientList:
+            self.clientList.remove(caller)
+            logging.info('%s left game' % caller.getNickname())
+        if caller in self.lobbyList:
+            self.lobbyList.remove(caller)
+            logging.info('%s left lobby' % caller.getNickname())
+
+    def addToLobby(c_list):
+        with self.lobbyListLock:
+            self.lobbyList += c_list
 
     def getSessions(self):
         with self.sessionListLock:
@@ -18,10 +53,7 @@ class serverClass(object):
         return lst
 
     def getUsedNicknames(self):
-        s = set()
-        for c in self.clientList:
-            s.add(c.getNickname())
-        return s
+        return map(lambda x: x.nickname, self.clientList)
 
     def addSession(self,session):
         with self.sessionListLock:
@@ -39,15 +71,17 @@ class serverClass(object):
 
     def listen(self,sock_addr):
         self.sock_addr = sock_addr
-        #self.backlog = backlog
         self.s = socket(AF_INET, SOCK_STREAM)
         self.s.bind(self.sock_addr)
-        self.s.listen(self.backlog)
+        self.s.listen(1)
         LOG.debug( 'Socket %s:%d is in listening state'\
                        '' % self.s.getsockname() )
     def loop(self):
         LOG.info( 'Falling to serving loop, press Ctrl+C to terminate ...' )
         clients = []
+
+        self.sessionList.append( \
+            sessionClass('Testsess', 7, self) )
 
         try:
             while 1:
