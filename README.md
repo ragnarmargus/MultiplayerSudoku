@@ -10,3 +10,5 @@ A repository to house the code for our project for University of Tartu Distribut
 * We also developed some basic functions for the headers.
          
 * This all was done in Juhans PC.
+
+6.11.17. - Got together. Continue server implementation. Startest testing it.
