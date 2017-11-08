@@ -3,18 +3,22 @@ FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
 logging.basicConfig(level=logging.DEBUG,format=FORMAT)
 LOG = logging.getLogger()
 
-import os,sys,inspect
-sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from messageProtocol import *
-from clientHandler import *
+
+from sessionClass import *
+import sessionClass as sc
+from serverMain import *
 from threading import Thread, Lock, currentThread
 
 from socket import AF_INET, SOCK_STREAM, socket
 from socket import error as soc_err
 
+import os,sys,inspect
+sys.path.insert(1, os.path.join(sys.path[0], '..'))
+from messageProtocol import *
+
 class clientHandler(Thread):
     def __init__(self, soc, Server):
-        LOG.info( 'Cheated client %s:%d' %soc.getsockname())
+        LOG.info( 'Created client %s:%d' %soc.getsockname())
         Thread.__init__(self)
         self.soc = soc # tuple (IP, port)
         self.score = 0
@@ -22,6 +26,7 @@ class clientHandler(Thread):
         self.session = None
         self.Server = Server
         self.send_lock = Lock()
+
 
     def getNickname(self):
         return self.nickname
@@ -39,10 +44,10 @@ class clientHandler(Thread):
         LOG.debug('Client %s:%d wants to write to sudoku: %s'\
             '' % (self.soc.getsockname()+(unparsedInts,)))
         try:
-            ints = list(payload)
-            number, x, y = int(inst[0]),int(inst[1]),int(inst[2])
-            REP, MSG = self.session.putNumber(number, x, y)
-        except ValueError:
+            ints = list(unparsedInts)
+            number, x, y = int(ints[0]),int(ints[1]),int(ints[2])
+            REP, MSG = self.session.putNumber(number, x, y, self)
+        except:
             REP, MSG = REP_NOT_OK, "Parsing int failed"
         return REP, MSG
 
@@ -89,7 +94,7 @@ class clientHandler(Thread):
     def createSession(self, sessName, maxPlayerCount):
         if sessName in self.Server.getSessNames():
             return REP_NOT_OK, "Session name in use"
-        sess = sessionClass(sessName, maxPlayerCount,self.Server)
+        sess = sc.sessionClass(sessName, maxPlayerCount,self.Server)
         self.Server.sessionList.append(sess)
         self.session = sess
         if sess.addMe(self):
@@ -102,8 +107,11 @@ class clientHandler(Thread):
         
         LOG.debug('Received request [%d bytes] in total' % len(message))
         if len(message) < 2:
-            LOG.degug('Not enough data received from %s ' % message)
+            LOG.debug('Not enough data received from %s ' % message)
             return REP_NOT_OK, 'received too short message'
+	elif message.count(HEADER_SEP,2)>0 or message.count(FIELD_SEP)>1:
+            LOG.debug('Faulty message received from %s ' % message)
+            return REP_NOT_OK, 'received too faulty message'
         payload = message[2:]
         
         if message.startswith(REQ_NICKNAME + HEADER_SEP):
@@ -111,13 +119,20 @@ class clientHandler(Thread):
                 self.nickname = payload
                 LOG.debug('Client %s:%d will use name '\
                     '%s' % (self.soc.getsockname()+(self.nickname,)))
-                REP = REP_CURRENT_SESSIONS,\
-                MSG = str(map(lambda x: x.getSessInfo(), self.Server.getSessions()))
+                REP = REP_CURRENT_SESSIONS
+                MSG = str(map(lambda x: x.getSessInfo(),self.Server.getSessions()))
             else:
                 REP, MSG = REP_NOT_OK, "Name in use"
             
         elif message.startswith(REQ_JOIN_EXIST_SESS + HEADER_SEP):
-            msg = self.joinSession(payload)
+            if (self.name==None):
+		LOG.debug('Name unknown at session join: %s ' % message)
+            	REP, MSG = REP_NOT_OK, "Specify name"
+            elif (self.session!=None):
+		LOG.debug('Join session while in session: %s ' % message)
+            	REP, MSG = REP_NOT_OK, "Leave current session"
+	    else:
+	        msg = self.joinSession(payload)
             if msg == "OK":
                 LOG.debug('Client %s:%d joined session '\
                     '%s' % (self.soc.getsockname()+(payload,)))
@@ -128,10 +143,17 @@ class clientHandler(Thread):
                 REP, MSG = REP_NOT_OK, msg
             
         elif message.startswith(REQ_JOIN_NEW_SESS + HEADER_SEP):
-            sessname, playercount = payload.split(FIELD_SEP)
             try:
-                playercount = int(playercount)
-                REP, MSG = self.createSession(sessname, playercount)
+		if (self.name==None):
+		    LOG.debug('Name unknown at session create: %s ' % message)
+            	    REP, MSG = REP_NOT_OK, "Specify name"
+                elif (self.session!=None):
+		    LOG.debug('Join session while in session: %s ' % message)
+            	    REP, MSG = REP_NOT_OK, "Leave current session"
+		else:
+		    sessname, playercount = payload.split(FIELD_SEP)
+		    playercount = int(playercount)
+                    REP, MSG = self.createSession(sessname, playercount)
                 if REP == "OK":
                     LOG.debug('Client %s:%d created session %s' \
                               % (self.soc.getsockname()+(sessname,)))
@@ -139,11 +161,15 @@ class clientHandler(Thread):
                 else:
                     LOG.debug('Client %s:%d failed to create and join session: '\
                     '%s' % (self.soc.getsockname()+(MSG,)))
-            except ValueError:
+            except:
                 REP, MSG = REP_NOT_OK, "Unable to parse integer"
             
         elif message.startswith(REQ_PUT_NR + HEADER_SEP):
-            REP, MSG = self.requestPutNumber(payload)
+            if (self.session==None):
+		LOG.debug('Not in session: %s ' % message)
+            	REP, MSG = REP_NOT_OK, "Not in session"
+            else:
+		REP, MSG = self.requestPutNumber(payload)
 
         else:
             LOG.debug('Unknown control message received: %s ' % message)
@@ -174,7 +200,7 @@ class clientHandler(Thread):
             return r
 
     def send_notification(self,message):
-        return self.session_send(RSP_GM_NOTIFY+HEADER_SEP+message)
+        return self.session_send(REP_NOTIFY+HEADER_SEP+message)
 
     def send_specific(self,header,message):
         return self.session_send(header+HEADER_SEP+message)
@@ -189,6 +215,6 @@ class clientHandler(Thread):
             if not self.send_specific(rsp, msg):
                 break
         self.exists = False
-        if session != None:
+        if self.session != None:
             self.session.removeMe()
         self.Server.removeMe()

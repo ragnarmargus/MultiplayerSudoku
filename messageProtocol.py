@@ -20,7 +20,7 @@ REP_SCORES_GAME_OVER = '3'  #REPnr:[nickname|score, ...]+term
 
 REP_TABLE = '4'             #REPnr:sudokuTable(81 int)+term
 
-REP_NOTIFY = 'n'            #REPnr:NotifyMsg+term
+REP_NOTIFY = '5'            #REPnr:NotifyMsg+term
 REP_NOT_OK = '9'            #REPnr:ErrorMsg+term
 
 ##REP_DICT = {

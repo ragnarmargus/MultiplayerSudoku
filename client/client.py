@@ -5,6 +5,7 @@ LOG = logging.getLogger()
 from threading import Thread, Lock, currentThread
 from socket import AF_INET, SOCK_STREAM, socket
 from socket import error as soc_err
+import time
 
 server_address = ('127.0.0.1',7777)
 s = socket(AF_INET, SOCK_STREAM)
@@ -23,5 +24,6 @@ t_listener.start()
 while 1:
     msg = raw_input('\nFull msg: ')
     s.sendall(msg)
+    time.sleep(0.1)
 
 s.close()

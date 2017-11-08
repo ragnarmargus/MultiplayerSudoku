@@ -80,8 +80,8 @@ class serverClass(object):
         LOG.info( 'Falling to serving loop, press Ctrl+C to terminate ...' )
         clients = []
 
-        self.sessionList.append( \
-            sessionClass('Testsess', 7, self) )
+        #self.sessionList.append( \
+        #    sessionClass('Testsess', 7, self) )
 
         try:
             while 1:

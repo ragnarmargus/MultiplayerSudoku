@@ -7,6 +7,7 @@ import os,sys,inspect
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from messageProtocol import *
 from clientHandler import *
+from serverMain import *
 from threading import Thread, Lock, currentThread
 
 
@@ -22,13 +23,9 @@ class sessionClass():
         self.tableLock = Lock()
         self.clientsLock = Lock()
 
-    def notify_update(self,msg,showCaller=True):
-        caller = currentThread().getName()
+    def notify_update(self,msg):
         joined = filter(lambda x: x.session!=None, self.clients)
-        if showCaller:
-            map(lambda x: x.send_notification('%s %s' % (caller, msg)), joined)
-        else:
-            map(lambda x: x.send_notification(msg), joined)
+        map(lambda x: x.send_notification(msg), joined)
 
     def send_specific_update(self,header,msg):
         joined = filter(lambda x: x.session!=None, self.clients)
@@ -36,14 +33,14 @@ class sessionClass():
 
     def getSessInfo(self):
         return self.sessName+'-'\
-               +str(len(self.clients))+'/'+\
+               +str(len(self.clients))+'/'\
                +str(self.maxClients)
 
     def addMe(self, c):
         with self.clientsLock:
-            if len(clients) < maxClients:            
+            if len(self.clients) < self.maxClients:            
                 self.clients.append(c)
-                self.notify_update(self,'joined game')
+                self.notify_update(c.nickname+' joined game')
                 return True
             return False
 
@@ -52,7 +49,7 @@ class sessionClass():
         caller.session = None
         if caller in self.clients:
             self.clients.remove(caller)
-            self.notify_update(self,'joined game')
+            self.notify_update(c.nickname+' joined game')
             logging.info('%s left game' % caller.getNickname())
 
     def getScoresNicknames(self):
@@ -69,8 +66,8 @@ class sessionClass():
             elif True:  # if correct
                 msg = 'Correct'
                 client.incScore()
-                self.notify_update('Scores: '+self.getScoresNicknames(),False)
-                self.send_specific_update(REP_TABLE,self.currentTable)
+                self.notify_update('Scores: '+self.getScoresNicknames())
+                self.send_specific_update(REP_TABLE,self.tableCur)
                 if False: # game over
                     self.send_specific_update(REP_SCORES_GAME_OVER,self.getScoresNicknames())
                     sessList = (self.Server.getSessions()).remove(self)
