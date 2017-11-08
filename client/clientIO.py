@@ -1,3 +1,19 @@
+from threading import Thread, Condition, Lock, currentThread
+from getpass import getpass
+
+def enum(**vals):
+    return type('Enum', (), vals)
+
+class OutputClosedException(Exception):
+
+    def __init__(self):
+        Exception.__init__(self, 'Output PIPE closed!')
+
+class InputClosedException(Exception):
+
+    def __init__(self):
+        Exception.__init__(self, 'Input PIPE closed!')
+
 class AbstractSyncIO:
 
     ioclose = enum(IN=0,OUT=1,BOTH=2)

@@ -1,9 +1,9 @@
-import logging
+import logging, ast
 FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
 logging.basicConfig(level=logging.DEBUG,format=FORMAT)
 LOG = logging.getLogger()
 
-from threading import Thread, Lock, currentThread
+from threading import Thread, Condition, Lock, currentThread
 from clientIO import *
 
 from socket import AF_INET, SOCK_STREAM, socket, SHUT_RD
@@ -18,7 +18,7 @@ class Client():
     __gm_states = enum(
         NEED_NAME = 0,
         NOTCONNECTED = 1,
-        NEED_NAME_VERIFICATION = 2,
+        SERVER_REFUSED_NAME = 2,
         NEED_SESSION = 3,
         WAIT_FOR_PLAYERS = 4,
         NEED_PUTNUMBER = 5
@@ -26,8 +26,10 @@ class Client():
 
     __gm_ui_input_prompts = {
         __gm_states.NEED_NAME : 'Please input user name!',
+        __gm_states.NOTCONNECTED : 'Please enter server IP!',
+        __gm_states.SERVER_REFUSED_NAME : 'Username in use. Enter new one!',
         __gm_states.NEED_SESSION : 'Join or create new session!',
-        __gm_states.WAIT_FOR_PLAYERS : 'Waiting for players!'
+        __gm_states.WAIT_FOR_PLAYERS : 'Waiting for players!',
         __gm_states.NEED_PUTNUMBER : 'Enter x, y, number for Sudoku!'
     }
 
@@ -50,6 +52,8 @@ class Client():
         self.__my_name = None
         self.__client_sudoku_copy = ''
 
+        self.network_thread = None
+
     def __state_change(self,newstate):
         '''Set the new state of the game'''
         with self.__gm_state_lock:
@@ -57,146 +61,17 @@ class Client():
             logging.debug('Games state changed to [%d]' % newstate)
             self.__io.output_sync(self.__gm_ui_input_prompts[newstate])
 
-    def set_my_name(self,name):
-        '''Setup player name before we can join the game'''
-        payload = serialize(name)
-        logging.debug(\
-            'Requesting the server to set player\'s name to %s ...' % name)
-        rsp = self.__sync_request(REQ_GM_SET_NAME, payload)
-        if rsp != None:
-            head,payload = rsp
-            if head == RSP_GM_SET_NAME:
-                if payload[0] == '1':
-                    logging.debug('Server confirmed player\'s name')
-                    self.__my_name = name
-                    self.__io.output_sync('Joined the game!')
-                    return True
-                else:
-                    logging.debug('Server rejected player\'s name')
-                    self.__io.output_sync('Select different name!')
-                    return False
-            else:
-                logging.warn('Protocol error, unexpected control code!')
-                logging.warn(\
-                    'Expected [%s] received [%s]' % (RSP_GM_SET_NAME,head))
-
-
-##    def set_new_word_to_guess(self,word):
-##        '''Propose the new word to guess'''
-##        payload = serialize(word)
-##        logging.debug(\
-##            'Requesting the server to the new word to guess: %s ...' % word)
-##        rsp = self.__sync_request(REQ_GM_SET_WORD, payload)
-##        if rsp != None:
-##            head,payload = rsp
-##            if head == RSP_GM_SET_WORD:
-##                if payload[0] == '1':
-##                    logging.debug('Server confirmed new word: %s' % word)
-##                    self.__io.output_sync('Let others guess: [%s]' % word)
-##                    return True
-##                else:
-##                    logging.debug('Server rejected player\'s word %' % word)
-##                    logging.debug('Someone was faster in setting word!')
-##                    return False
-##            else:
-##                logging.warn('Protocol error, unexpected control code!')
-##                logging.warn(\
-##                    'Expected [%s] received [%s]' % (RSP_GM_SET_WORD,head))
-
-##    def guess_letter(self,l):
-##        '''Guess the letter'''
-##        l = l[0]
-##        if l in self.__tried_letters:
-##            self.__io.output_sync(\
-##                'Letter %s already tried and is wrong, try another one!' % l)
-##            return False
-##        if l in self.__current_progress:
-##            self.__io.output_sync(\
-##                'Letter %s already guessed, try another one!' % l)
-##            return False
-##        logging.debug(\
-##            'Requesting the server to guess letter: [%s] ...' % l)
-##        rsp = self.__sync_request(REQ_GM_GUESS, l)
-##        if rsp != None:
-##            head,payload = rsp
-##            if head == RSP_GM_GUESS:
-##                if payload[0] == '1':
-##                    logging.debug('Server confirmed letter: %s' % l)
-##                    return True
-##                else:
-##                    logging.debug('Server rejected letter %s' % l)
-##                    self.__io.output_sync('Wrong letter %s' % l)
-##                    self.__tried_letters += l
-##                    self.get_current_progress()
-##                    return False
-##            else:
-##                logging.warn('Protocol error, unexpected control code!')
-##                logging.warn(\
-##                    'Expected [%s] received [%s]' % (RSP_GM_GUESS,head))
-
-##    def get_current_progress(self):
-##        '''Get current progress of word guessing'''
-##        logging.debug(\
-##            'Requesting the current state ...')
-##        rsp = self.__sync_request(REQ_GM_GET_STATE)
-##        if rsp != None:
-##            head,payload = rsp
-##            if head == RSP_GM_STATE:
-##                uncovered_word = deserialize(payload)
-##                self.__current_progress = uncovered_word
-##                if len(uncovered_word) > 0:
-##                    logging.debug('Current uncovered word [%s] received'\
-##                              '' % uncovered_word)
-##                    self.__io.output_sync('Current progress: [%s]' %
-##                                            uncovered_word)
-##                    self.__io.output_sync('You tried letters: [%s]' %
-##                                          self.__tried_letters)
-##                    self.__state_change(self.__gm_states.NEED_LETTER)
-##                else:
-##                    if self.__gm_state != self.__gm_states.NEED_WORD:
-##                        self.__state_change(self.__gm_states.NEED_WORD)
-##                        self.__tried_letters = ''
-##            else:
-##                logging.warn('Protocol error, unexpected control code!')
-##                logging.warn(\
-##                    'Expected [%s] received [%s]' % (RSP_GM_STATE,head))
-
-    def stop(self):
-        '''Stop the game client'''
-        try:
-            self.__s.shutdown(SHUT_RD)
-        except soc_err:
-            logging.warn('Was not connected anyway ..')
-        finally:
-            self.__s.close()
-        self.__sync_response('DIE!')
-        self.__async_notification('DIE!')
-
-    def connect(self,srv_addr):
-        '''Connect to server, start game session'''
-        self.__s = socket(AF_INET,SOCK_STREAM)
-        try:
-            self.__s.connect(srv_addr)
-            logging.info('Connected to Game server at %s:%d' % srv_addr)
-            self.__state_change(self.__gm_states.NEED_NAME)
-            return True
-        except soc_err as e:
-            logging.error('Can not connect to Game server at %s:%d'\
-                      ' %s ' % (srv_addr+(str(e),)))
-            self.__io.output_sync('Can\'t connect to server!')
-        return False
-
-    def __sync_request(self,header,payload=''):
+    def __sync_request(self,header,payload):
         '''Send request and wait for response'''
         with self.__send_lock:
-            req = header + MSG_FIELD_SEP + payload
+            req = header + HEADER_SEP + payload
             if self.__session_send(req):
                 with self.__rcv_sync_msgs_lock:
                     while len(self.__rcv_sync_msgs) <= 0:
                         self.__rcv_sync_msgs_lock.wait()
                     rsp = self.__rcv_sync_msgs.pop()
-                if rsp != 'DIE!':
-                    return rsp.split(MSG_FIELD_SEP)
+##                if rsp != 'DIE!':
+                    return rsp
             return None
 
     def __sync_response(self,rsp):
@@ -219,10 +94,10 @@ class Client():
         '''Receive the block of data till next block separator'''
         m,b = '',''
         try:
-            b = self.__s.recv(DEFAULT_RCV_BUFSIZE)
+            b = self.__s.recv(1)
             m += b
-            while len(b) > 0 and not (b.endswith(MSG_SEP)):
-                b = self.__s.recv(DEFAULT_RCV_BUFSIZE)
+            while len(b) > 0 and not (b.endswith(MSG_TERMCHR)):
+                b = self.__s.recv(1)
                 m += b
             if len(b) <= 0:
                 logging.debug( 'Socket receive interrupted'  )
@@ -245,12 +120,13 @@ class Client():
 
     def __session_send(self,msg):
         '''Just wrap the data, append the block separator and send out'''
-        m = msg + MSG_SEP
+        m = msg + MSG_TERMCHR
 
         r = False
         try:
             self.__s.sendall(m)
             r = True
+            print m, r
         except KeyboardInterrupt:
             self.__s.close()
             logging.info( 'Ctrl+C issued, terminating ...' )
@@ -271,7 +147,7 @@ class Client():
             logging.debug('Not enough data received from %s ' % message)
             return
         logging.debug('Response control code [%s]' % message[0])
-        if message.startswith(RSP_GM_NOTIFY + MSG_FIELD_SEP):
+        if message.startswith(REP_NOTIFY + HEADER_SEP):
             payload = message[2:]
             notification = deserialize(payload)
             logging.debug('Server notification received: %s' % notification)
@@ -294,6 +170,67 @@ class Client():
         except InputClosedException:
             return None
 
+    def set_user_name(self,user_input):        
+        isSuitable = True
+        if len(user_input) not in range(1,9):
+            for c in user_input:
+                if not c.isalnum():
+                    isSuitable = False
+                    break                
+        if not isSuitable:        
+            self.__io.output_sync('Not suitable name')
+        else:
+            self.__my_name = user_input
+            if self.__gm_state == self.__gm_states.NEED_NAME:
+                self.__state_change(self.__gm_states.NOTCONNECTED)
+            elif self.__gm_state == self.__gm_states.SERVER_REFUSED_NAME:
+                self.send_server_my_name_get_ack()
+
+    def send_server_my_name_get_ack(self):
+        try:
+            rsp = self.__sync_request(REQ_NICKNAME,self.__my_name)
+            header,msg = rsp.split(HEADER_SEP)
+            if header == REP_NOT_OK:
+                self.__io.output_sync('Connecting and verifying name failed %s' %msg)
+                self.__state_change(self.__gm_states.SERVER_REFUSED_NAME)
+            elif header == REP_CURRENT_SESSIONS:
+                msg = ast.literal_eval(msg)
+                if len(msg) == 0:
+                    self.__io.output_sync('Name successfully assigned\n No currently available sessions')
+                else:
+                    self.__io.output_sync('Name successfully assigned\n Available sessions: ')
+                    map(lambda x: self.__io.output_sync('  %s\n' % x), msg)
+                self.__state_change(self.__gm_states.NEED_SESSION)
+        except Exception as e:
+            self.__io.output_sync('Name verification by server failed %s' %str(e))
+
+    def get_connected(self, ip):
+        self.__s = socket(AF_INET,SOCK_STREAM)
+        srv_addr = (ip,7777)
+        try:
+            self.__s.connect(srv_addr)
+            logging.info('Connected to Game server at %s:%d' % srv_addr)             
+
+            self.network_thread = Thread(name='NetworkThread',target=self.network_loop)
+            self.network_thread.start()
+            
+            self.send_server_my_name_get_ack()
+        except soc_err as e:
+            logging.error('Can not connect to Game server at %s:%d'\
+                      ' %s ' % (srv_addr+(str(e),)))
+            self.__io.output_sync('Can\'t connect to server!')
+
+    def stop(self):
+        '''Stop the game client'''
+        try:
+            self.__s.shutdown(SHUT_RD)
+        except soc_err:
+            logging.warn('Was not connected anyway ..')
+        finally:
+            self.__s.close()
+        self.__sync_response('DIE!')
+        self.__async_notification('DIE!')
+
     def game_loop(self):
         '''Main game loop (assuming network-loop and notifications-loop are
         running already'''
@@ -303,14 +240,20 @@ class Client():
             'Type in your message (or Q to quit), hit Enter to submit')
         while 1:
             user_input = self.__get_user_input()
+            
             if user_input == 'Q':
                 break
-            if self.__gm_state == self.__gm_states.NEED_NAME:
-                self.set_my_name(user_input)
-            elif self.__gm_state == self.__gm_states.NEED_WORD:
-                self.set_new_word_to_guess(user_input)
-            elif self.__gm_state == self.__gm_states.NEED_LETTER:
-                self.guess_letter(user_input)
+
+            elif self.__gm_state == self.__gm_states.NEED_NAME\
+                 or self.__gm_state == self.__gm_states.SERVER_REFUSED_NAME:
+                self.set_user_name(user_input)
+            elif self.__gm_state == self.__gm_states.NOTCONNECTED:
+                self.get_connected(user_input)
+                
+##        NEED_SESSION = 3,
+##        WAIT_FOR_PLAYERS = 4,
+##        NEED_PUTNUMBER = 5
+        
         self.__io.output_sync('Q entered, disconnecting ...')
 
     def notifications_loop(self):
@@ -345,22 +288,19 @@ if __name__ == '__main__':
 
     sync_io = SyncConsoleAppenderRawInputReader()
     client = Client(sync_io)
-    if client.connect(srv_addr):
-
-        network_thread = Thread(name='NetworkThread',target=client.network_loop)
-        notifications_thread =\
-             Thread(name='NotificationsThread',target=client.notifications_loop)
-        network_thread.start()
-        notifications_thread.start()
-
-        try:
-            client.game_loop()
-        except KeyboardInterrupt:
-            logging.warn('Ctrl+C issued, terminating ...')
-        finally:
-            client.stop()
-
-        network_thread.join()
-        notifications_thread.join()
+    notifications_thread =\
+            Thread(name='NotificationsThread',target=client.notifications_loop)
+    notifications_thread.start()
+    client.game_loop()
+    try:
+        client.game_loop()
+    except KeyboardInterrupt:
+        logging.warn('Ctrl+C issued, terminating ...')
+    finally:
+        client.stop()
+        
+    if self.network_thread != None:
+        self.network_thread.join()
+    notifications_thread.join()
 
     logging.info('Terminating')
