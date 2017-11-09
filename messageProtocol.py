@@ -14,13 +14,13 @@ REQ_PUT_NR = 'd'            #REQchr:xyz(int)+term
 
 # replies
 REP_CURRENT_SESSIONS = '0'  #REPnr:[sessName-currentPlayerNr/maxPlayerNr, ...]+term
-REP_CURRENT_PLAYERS = '1'   #REPnr:[nickname|score, ...]+term
-REP_PUT_NR = '2'            #REPnr:msg=Success/cell full/wrong+term
-REP_SCORES_GAME_OVER = '3'  #REPnr:[nickname|score, ...]+term
+REP_WAITING_PLAYERS = '2'   #REPnr:[nickname...]+term
+REP_PUT_NR = '3'            #REPnr:msg=Success/cell full/wrong+term
+REP_SCORES_GAME_OVER = '4'  #REPnr:[nickname|score, ...]+term
 
-REP_TABLE = '4'             #REPnr:sudokuTable(81 int)+term
+REP_TABLE = '5'             #REPnr:sudokuTable(81 int)+term
 
-REP_NOTIFY = '5'            #REPnr:NotifyMsg+term
+REP_NOTIFY = '6'            #REPnr:NotifyMsg+term
 REP_NOT_OK = '9'            #REPnr:ErrorMsg+term
 
 ##REP_DICT = {

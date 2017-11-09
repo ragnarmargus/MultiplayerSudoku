@@ -87,13 +87,17 @@ class clientHandler(Thread):
             if sessName == sess.sessName:
                 if sess.addMe(self):
                     self.session = sess
-                    return "OK"
+                    if self.session.gameRunning:
+                        return "Start"
+                    return 'Wait'
                 return "session full"
         return "No such session"
     
     def createSession(self, sessName, maxPlayerCount):
         if sessName in self.Server.getSessNames():
             return REP_NOT_OK, "Session name in use"
+        if maxPlayerCount < 2:
+            return REP_NOT_OK, "Too few max players specified %d" %maxPlayerCount
         sess = sc.sessionClass(sessName, maxPlayerCount,self.Server)
         self.Server.sessionList.append(sess)
         self.session = sess
@@ -109,7 +113,7 @@ class clientHandler(Thread):
         if len(message) < 2:
             LOG.debug('Not enough data received from %s ' % message)
             return REP_NOT_OK, 'received too short message'
-	elif message.count(HEADER_SEP,2)>0 or message.count(FIELD_SEP)>1:
+        elif message.count(HEADER_SEP,2)>0 or message.count(FIELD_SEP)>1:
             LOG.debug('Faulty message received from %s ' % message)
             return REP_NOT_OK, 'received too faulty message'
         payload = message[2:]
@@ -120,7 +124,9 @@ class clientHandler(Thread):
                 LOG.debug('Client %s:%d will use name '\
                     '%s' % (self.soc.getsockname()+(self.nickname,)))
                 REP = REP_CURRENT_SESSIONS
-                MSG = str(map(lambda x: x.getSessInfo(),self.Server.getSessions()))
+                MSG = ''
+                self.send_notification('Sessions: %s' \
+                        %''.join(map(lambda x: '\n  '+x.getSessInfo(),self.Server.getSessions())))
             else:
                 REP, MSG = REP_NOT_OK, "Name in use"
             
@@ -133,7 +139,11 @@ class clientHandler(Thread):
             	REP, MSG = REP_NOT_OK, "Leave current session"
 	    else:
 	        msg = self.joinSession(payload)
-            if msg == "OK":
+            if msg == "Wait":
+                LOG.debug('Client %s:%d joined session '\
+                    '%s' % (self.soc.getsockname()+(payload,)))
+                REP, MSG = REP_WAITING_PLAYERS, ''
+            elif msg == "Start":
                 LOG.debug('Client %s:%d joined session '\
                     '%s' % (self.soc.getsockname()+(payload,)))
                 REP, MSG = REP_TABLE, self.session.tableCur
@@ -157,7 +167,7 @@ class clientHandler(Thread):
                 if REP == "OK":
                     LOG.debug('Client %s:%d created session %s' \
                               % (self.soc.getsockname()+(sessname,)))
-                    REP, MSG = REP_TABLE, self.session.tableCur                
+                    REP, MSG = REP_WAITING_PLAYERS, ''               
                 else:
                     LOG.debug('Client %s:%d failed to create and join session: '\
                     '%s' % (self.soc.getsockname()+(MSG,)))
