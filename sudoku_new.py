@@ -97,3 +97,16 @@ def sud_to_string(sud):
 def sud_to_string2(sud):
     return str(sud).replace(" ","").replace("\n", "").replace("[","").replace("]","")
 
+class game():
+    def __init__(self,level):
+        self.solved,self.current=make_sudoku(level)
+
+    def set_nr(self,a,b,c): #change order of returns if necessary
+        if self.current[a,b]==0:
+            if self.solved[a,b] == c:
+                current[a,b] = c;
+                return 0
+            else:
+                return 2
+        else:
+            return 1
