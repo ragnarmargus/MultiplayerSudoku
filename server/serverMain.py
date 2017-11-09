@@ -31,6 +31,8 @@ class serverClass(object):
 
     def removeMe(self):
         caller = currentThread()
+        if caller.session != None:
+            caller.session.removeMe()
         if caller in self.clientList:
             self.clientList.remove(caller)
             logging.info('%s left game' % caller.getNickname())
@@ -38,7 +40,12 @@ class serverClass(object):
             self.lobbyList.remove(caller)
             logging.info('%s left lobby' % caller.getNickname())
 
-    def addToLobby(c_list):
+    def removeFromLobby(self,c):
+        with self.lobbyListLock:
+            if c in self.lobbyList:
+                self.lobbyList.remove(c)
+
+    def addToLobby(self,c_list):
         with self.lobbyListLock:
             self.lobbyList += c_list
 
@@ -61,6 +68,11 @@ class serverClass(object):
                 self.sessionList.append(session)
                 return True
             return False
+         
+    def removeSession(self,sess):
+        with self.sessionListLock:
+            if sess in self.sessionList:
+                self.sessionList.remove(sess)
 
     def addClient(self,client):
         with self.clientListLock:
@@ -80,9 +92,6 @@ class serverClass(object):
         LOG.info( 'Falling to serving loop, press Ctrl+C to terminate ...' )
         clients = []
 
-        #self.sessionList.append( \
-        #    sessionClass('Testsess', 7, self) )
-
         try:
             while 1:
                 client_socket = None
@@ -90,6 +99,7 @@ class serverClass(object):
                 client_socket,client_addr = self.s.accept()
                 c = clientHandler(client_socket,self)                
                 self.clientList.append(c)
+                self.addToLobby([c])
                 c.start()
         except KeyboardInterrupt:
             LOG.warn( 'Ctrl+C issued closing server ...' )

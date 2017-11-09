@@ -28,7 +28,7 @@ class Client():
         __gm_states.NEED_NAME : 'Please input user name!',
         __gm_states.NOTCONNECTED : 'Please enter server IP!',
         __gm_states.SERVER_REFUSED_NAME : 'Username in use. Enter new one!',
-        __gm_states.NEED_SESSION : 'Join or create new session!',
+        __gm_states.NEED_SESSION : 'Join a session!',
         __gm_states.WAIT_FOR_PLAYERS : 'Waiting for players!',
         __gm_states.NEED_PUTNUMBER : 'Enter x, y, number for Sudoku!'
     }
@@ -70,7 +70,7 @@ class Client():
                     while len(self.__rcv_sync_msgs) <= 0:
                         self.__rcv_sync_msgs_lock.wait()
                     rsp = self.__rcv_sync_msgs.pop()
-##                if rsp != 'DIE!':
+                if rsp != 'DIE!':
                     return rsp
             return None
 
@@ -149,17 +149,20 @@ class Client():
         logging.debug('Response control code [%s]' % message[0])
         if message.startswith(REP_NOTIFY + HEADER_SEP):
             payload = message[2:]
-            notification = deserialize(payload)
-            logging.debug('Server notification received: %s' % notification)
-            self.__async_notification(notification)
-        elif message[:2] in map(lambda x: x+MSG_FIELD_SEP,  [RSP_GM_GUESS,
-                                                             RSP_GM_SET_WORD,
-                                                             RSP_GM_SET_NAME,
-                                                             RSP_GM_STATE]):
+            logging.debug('Server notification received: %s' % payload)
+            self.__async_notification(payload)
+        elif message[:2] in map(lambda x: x+HEADER_SEP,  [REP_CURRENT_SESSIONS,
+                                                          REP_PUT_NR,
+                                                          REP_WAITING_PLAYERS,
+                                                          REP_TABLE,
+                                                          REP_NOT_OK]):
             self.__sync_response(message)
+        elif message[:2] == REP_SCORES_GAME_OVER+HEADER_SEP:
+            self.__async_notification('Game ended %s\n' %message[2:])
+            self.__state_change(self.__gm_states.NEED_SESSION)
         else:
             logging.debug('Unknown control message received: %s ' % message)
-            return RSP_UNKNCONTROL
+            return REP_NOT_OK
 
     def __get_user_input(self):
         '''Gather user input'''
@@ -194,15 +197,10 @@ class Client():
                 self.__io.output_sync('Connecting and verifying name failed %s' %msg)
                 self.__state_change(self.__gm_states.SERVER_REFUSED_NAME)
             elif header == REP_CURRENT_SESSIONS:
-                msg = ast.literal_eval(msg)
-                if len(msg) == 0:
-                    self.__io.output_sync('Name successfully assigned\n No currently available sessions')
-                else:
-                    self.__io.output_sync('Name successfully assigned\n Available sessions: ')
-                    map(lambda x: self.__io.output_sync('  %s\n' % x), msg)
+                self.__io.output_sync('Name successfully assigned')
                 self.__state_change(self.__gm_states.NEED_SESSION)
         except Exception as e:
-            self.__io.output_sync('Name verification by server failed %s' %str(e))
+            self.__io.output_sync('Name verification by client failed %s' %str(e))
 
     def get_connected(self, ip):
         self.__s = socket(AF_INET,SOCK_STREAM)
@@ -219,6 +217,70 @@ class Client():
             logging.error('Can not connect to Game server at %s:%d'\
                       ' %s ' % (srv_addr+(str(e),)))
             self.__io.output_sync('Can\'t connect to server!')
+
+    def get_session(self):
+        self.__io.output_sync('Wish to create new session [y/n]: ')
+        create_sess = self.__get_user_input()
+        while create_sess not in ['y','n']:
+            create_sess = self.__get_user_input()
+        if create_sess == 'y':
+            p_count = 0
+            while p_count < 2:
+                self.__io.output_sync('Input max player numbers: ')
+                try:
+                    p_count = int(self.__get_user_input())
+                    if p_count < 2:
+                        self.__io.output_sync('Too few players... (minimum 2)')
+                except:
+                    self.__io.output_sync('Please enter a number')
+        self.__io.output_sync('Enter session name: ')
+
+        validName = False
+        while not validName:
+            validName = True
+            sess_name = self.__get_user_input()
+            if len(sess_name) not in range(1,9):
+                self.__io.output_sync('Name length not in [1...8]')
+                validName = False
+            else:
+                for c in sess_name:
+                    if not c.isalnum():
+                        self.__io.output_sync('Session name contains illegal chars')
+                        validName = False
+                        break
+                    
+        if create_sess == 'n':
+            rsp = self.__sync_request(REQ_JOIN_EXIST_SESS,sess_name)
+        else:
+            rsp = self.__sync_request(REQ_JOIN_NEW_SESS,sess_name+FIELD_SEP+str(p_count))
+        try:
+            header,msg = rsp.split(HEADER_SEP)
+            if header == REP_NOT_OK:
+                self.__io.output_sync('Error joining session: %s' %msg)
+            elif header == REP_WAITING_PLAYERS:
+                self.__state_change(self.__gm_states.WAIT_FOR_PLAYERS)
+            elif header == REP_TABLE:
+                self.__io.output_sync('Game started: \n%s' %rsp[2:])
+                self.__state_change(self.__gm_states.NEED_PUTNUMBER)
+        except Exception as e:
+            self.__io.output_sync('Analysing sess join/create msg fail %s' %str(e))
+
+    def waiting_for_players(self):
+        with self.__rcv_sync_msgs_lock:
+            while len(self.__rcv_sync_msgs) <= 0:
+                self.__rcv_sync_msgs_lock.wait()
+            rsp = self.__rcv_sync_msgs.pop()
+        if rsp.startswith(REP_TABLE+HEADER_SEP):
+            self.__io.output_sync('Game started: \n%s' %rsp[2:])
+            self.__state_change(self.__gm_states.NEED_PUTNUMBER)
+
+    def putNumber(self, s):
+        rsp = self.__sync_request(REQ_PUT_NR,s)
+        if rsp.startswith(REP_PUT_NR+HEADER_SEP):
+            self.__io.output_sync('Quess result: %s' %rsp[2:])
+        else:
+            self.__io.output_sync('Incorrect server response: (%s)' %rsp)
+        
 
     def stop(self):
         '''Stop the game client'''
@@ -238,21 +300,25 @@ class Client():
         self.__io.output_sync('Press Enter to initiate input, ')
         self.__io.output_sync(\
             'Type in your message (or Q to quit), hit Enter to submit')
+        self.__io.output_sync('Please enter username! ')
         while 1:
-            user_input = self.__get_user_input()
+            if self.__gm_state != self.__gm_states.NEED_SESSION and\
+                self.__gm_state != self.__gm_states.WAIT_FOR_PLAYERS:
+                user_input = self.__get_user_input()
             
             if user_input == 'Q':
                 break
-
             elif self.__gm_state == self.__gm_states.NEED_NAME\
                  or self.__gm_state == self.__gm_states.SERVER_REFUSED_NAME:
                 self.set_user_name(user_input)
             elif self.__gm_state == self.__gm_states.NOTCONNECTED:
                 self.get_connected(user_input)
-                
-##        NEED_SESSION = 3,
-##        WAIT_FOR_PLAYERS = 4,
-##        NEED_PUTNUMBER = 5
+            elif self.__gm_state == self.__gm_states.NEED_SESSION:
+                self.get_session()
+            elif self.__gm_state == self.__gm_states.WAIT_FOR_PLAYERS:
+                self.waiting_for_players()
+            elif self.__gm_state == self.__gm_states.NEED_PUTNUMBER:
+                self.putNumber(user_input)
         
         self.__io.output_sync('Q entered, disconnecting ...')
 
@@ -268,15 +334,13 @@ class Client():
                 msg = self.__rcv_async_msgs.pop(0)
                 if msg == 'DIE!':
                     return
-            self.__io.output_sync('Server Notification: %s' % msg)
-            self.get_current_progress()
+            self.__io.output_sync(msg)
 
     def network_loop(self):
         '''Network Receiver/Message Processor loop'''
         logging.info('Falling to receiver loop ...')
         while 1:
             m = self.__session_rcv()
-            print m
             if len(m) <= 0:
                 break
             self.__protocol_rcv(m)
