@@ -61,12 +61,15 @@ class sessionClass():
             logging.info('%s left game' % caller.getNickname())
 
         if (len(self.clients)<2 and self.gameRunning) or len(self.clients)==0:
-            self.send_specific_update(REP_SCORES_GAME_OVER,'Winner: %s' %self.findHighScore())
-            sessList = (self.Server.getSessions()).remove(self)
-            MSG = str(map(lambda x: x.getSessInfo(), self.Server.sessionList))
+            self.send_specific_update(REP_SCORES_GAME_OVER,\
+				'Winner: %s' %self.findHighScore())
+	    #if self in self.Server.getSessions():
+            #    sessList = (self.Server.getSessions()).remove(self)
+            #MSG = str(map(lambda x: x.getSessInfo(), self.Server.sessionList))
+            self.Server.removeSession(self)
             self.Server.addToLobby(self.clients)
             self.clients = []
-            self.Server.removeSession(self)
+            #self.Server.removeSession(self)
             logging.info('Session %s closing - too few players' %self.sessName)
             
 
@@ -95,13 +98,16 @@ class sessionClass():
                 client.incScore()
                 self.notify_update('Scores: '+self.getScoresNicknames())
                 self.send_specific_update(REP_TABLE,self.tableCur)
-                if False: # game over
-                    self.send_specific_update(REP_SCORES_GAME_OVER,'Winner: %s' %self.findHighScore())
-                    self.notify_update('Sessions: %s' \
-                        %''.join(map(lambda x: '\n  '+x.getSessInfo(),self.Server.getSessions())))
-                    sessList = (self.Server.getSessions()).remove(self)
-                    MSG = str(map(lambda x: x.getSessInfo(), sessList))
+                if True: # game over
+                    self.send_specific_update(REP_SCORES_GAME_OVER,\
+				'Winner: %s' %self.findHighScore())
+                    #self.notify_update('Available Sessions: %s' \
+                    #    %''.join(map(lambda x: '\n  '+\
+		    #x.getSessInfo(),self.Server.getSessions())))
+                    #sessList = (self.Server.getSessions()).remove(self)
+                    #MSG = str(map(lambda x: x.getSessInfo(), sessList))
+
+		    self.Server.removeSession(self)
                     self.Server.addToLobby(self.clients)
                     self.clients = []
-                    self.Server.removeSession(self)
             return REP_PUT_NR, msg

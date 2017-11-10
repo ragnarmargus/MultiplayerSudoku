@@ -63,7 +63,8 @@ class clientHandler(Thread):
             print m,b
             
             if len(b) <= 0:
-                LOG.info( 'Client %s:%d disconnected' % self.soc.getsockname() )
+                LOG.info( 'Client %s:%d disconnected' % \
+				self.soc.getsockname() )
                 self.soc.close()
                 m = ''
             m = m[:-1]
@@ -125,8 +126,9 @@ class clientHandler(Thread):
                     '%s' % (self.soc.getsockname()+(self.nickname,)))
                 REP = REP_CURRENT_SESSIONS
                 MSG = ''
-                self.send_notification('Sessions: %s' \
-                        %''.join(map(lambda x: '\n  '+x.getSessInfo(),self.Server.getSessions())))
+                self.send_notification('Available Sessions: %s' \
+                        %''.join(map(lambda x: '\n  '+\
+			x.getSessInfo(),self.Server.getSessions())))
             else:
                 REP, MSG = REP_NOT_OK, "Name in use"
             

@@ -46,6 +46,11 @@ class serverClass(object):
                 self.lobbyList.remove(c)
 
     def addToLobby(self,c_list):
+	for c in c_list:
+            c.session=None
+            c.send_notification('Available Sessions: %s' \
+                        %''.join(map(lambda x: '\n  '+\
+                        x.getSessInfo(),self.getSessions())))
         with self.lobbyListLock:
             self.lobbyList += c_list
 

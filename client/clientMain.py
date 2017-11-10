@@ -28,7 +28,8 @@ class Client():
         __gm_states.NEED_NAME : 'Please input user name!',
         __gm_states.NOTCONNECTED : 'Please enter server IP!',
         __gm_states.SERVER_REFUSED_NAME : 'Username in use. Enter new one!',
-        __gm_states.NEED_SESSION : 'Join a session!',
+        __gm_states.NEED_SESSION : 'Join a session!\n'+\
+				'Wish to create new session [y/n]: ',
         __gm_states.WAIT_FOR_PLAYERS : 'Waiting for players!',
         __gm_states.NEED_PUTNUMBER : 'Enter x, y, number for Sudoku!'
     }
@@ -36,7 +37,7 @@ class Client():
     def __init__(self,io):
         # Network related
         self.__send_lock = Lock()   # Only one entity can send out at a time
-
+	self.__s = None
         # Here we collect the received responses and notify the waiting
         # entities
         self.__rcv_sync_msgs_lock = Condition()  # To wait/notify on received
@@ -200,16 +201,19 @@ class Client():
                 self.__io.output_sync('Name successfully assigned')
                 self.__state_change(self.__gm_states.NEED_SESSION)
         except Exception as e:
-            self.__io.output_sync('Name verification by client failed %s' %str(e))
+            self.__io.output_sync('Name verification by client failed %s'\
+ %str(e))
 
     def get_connected(self, ip):
         self.__s = socket(AF_INET,SOCK_STREAM)
         srv_addr = (ip,7777)
         try:
             self.__s.connect(srv_addr)
-            logging.info('Connected to Game server at %s:%d' % srv_addr)             
+            logging.info('Connected to Game server at %s:%d' \
+                                      % srv_addr)             
 
-            self.network_thread = Thread(name='NetworkThread',target=self.network_loop)
+            self.network_thread = \
+		Thread(name='NetworkThread',target=self.network_loop)
             self.network_thread.start()
             
             self.send_server_my_name_get_ack()
@@ -218,41 +222,53 @@ class Client():
                       ' %s ' % (srv_addr+(str(e),)))
             self.__io.output_sync('Can\'t connect to server!')
 
-    def get_session(self):
-        self.__io.output_sync('Wish to create new session [y/n]: ')
-        create_sess = self.__get_user_input()
+    def get_session(self, create_sess):
+        #self.__io.output_sync('Wish to create new session [y/n]: ')
+        #create_sess = self.__get_user_input()
         while create_sess not in ['y','n']:
-            create_sess = self.__get_user_input()
+	    try:
+                create_sess = self.__get_user_input()
+            except KeyboardInterrupt:
+		return False
+            if create_sess == "Q": return False
         if create_sess == 'y':
-            p_count = 0
-            while p_count < 2:
+            p_count = "0"
+            while int(p_count) < 2:
                 self.__io.output_sync('Input max player numbers: ')
                 try:
-                    p_count = int(self.__get_user_input())
-                    if p_count < 2:
+                    p_count = self.__get_user_input()
+		    if p_count == "Q": return False
+                    if int(p_count) < 2:
                         self.__io.output_sync('Too few players... (minimum 2)')
-                except:
+                except KeyboardInterrupt:
+		    return False
+		except:
                     self.__io.output_sync('Please enter a number')
         self.__io.output_sync('Enter session name: ')
 
         validName = False
         while not validName:
             validName = True
-            sess_name = self.__get_user_input()
+	    try:
+                sess_name = self.__get_user_input()
+	    except KeyboardInterrupt:
+		return False
+            if sess_name == "Q": return False
             if len(sess_name) not in range(1,9):
                 self.__io.output_sync('Name length not in [1...8]')
                 validName = False
             else:
                 for c in sess_name:
                     if not c.isalnum():
-                        self.__io.output_sync('Session name contains illegal chars')
+                        self.__io.output_sync(\
+                            'Session name contains illegal chars')
                         validName = False
                         break
                     
         if create_sess == 'n':
             rsp = self.__sync_request(REQ_JOIN_EXIST_SESS,sess_name)
         else:
-            rsp = self.__sync_request(REQ_JOIN_NEW_SESS,sess_name+FIELD_SEP+str(p_count))
+            rsp = self.__sync_request(REQ_JOIN_NEW_SESS,sess_name+FIELD_SEP+(p_count))
         try:
             header,msg = rsp.split(HEADER_SEP)
             if header == REP_NOT_OK:
@@ -264,15 +280,23 @@ class Client():
                 self.__state_change(self.__gm_states.NEED_PUTNUMBER)
         except Exception as e:
             self.__io.output_sync('Analysing sess join/create msg fail %s' %str(e))
+	return True
 
     def waiting_for_players(self):
         with self.__rcv_sync_msgs_lock:
             while len(self.__rcv_sync_msgs) <= 0:
-                self.__rcv_sync_msgs_lock.wait()
+		try:
+                    self.__rcv_sync_msgs_lock.wait(0.1)
+		except KeyboardInterrupt:
+		    return False
+		except RuntimeError:
+		    continue
+
             rsp = self.__rcv_sync_msgs.pop()
         if rsp.startswith(REP_TABLE+HEADER_SEP):
             self.__io.output_sync('Game started: \n%s' %rsp[2:])
             self.__state_change(self.__gm_states.NEED_PUTNUMBER)
+	return True
 
     def putNumber(self, s):
         rsp = self.__sync_request(REQ_PUT_NR,s)
@@ -284,12 +308,13 @@ class Client():
 
     def stop(self):
         '''Stop the game client'''
-        try:
-            self.__s.shutdown(SHUT_RD)
-        except soc_err:
-            logging.warn('Was not connected anyway ..')
-        finally:
-            self.__s.close()
+        if not self.__s==None:
+            try:
+                self.__s.shutdown(SHUT_RD)
+            except soc_err:
+                logging.warn('Was not connected anyway ..')
+            finally:
+                self.__s.close()
         self.__sync_response('DIE!')
         self.__async_notification('DIE!')
 
@@ -302,8 +327,7 @@ class Client():
             'Type in your message (or Q to quit), hit Enter to submit')
         self.__io.output_sync('Please enter username! ')
         while 1:
-            if self.__gm_state != self.__gm_states.NEED_SESSION and\
-                self.__gm_state != self.__gm_states.WAIT_FOR_PLAYERS:
+            if self.__gm_state != self.__gm_states.WAIT_FOR_PLAYERS:
                 user_input = self.__get_user_input()
             
             if user_input == 'Q':
@@ -314,12 +338,13 @@ class Client():
             elif self.__gm_state == self.__gm_states.NOTCONNECTED:
                 self.get_connected(user_input)
             elif self.__gm_state == self.__gm_states.NEED_SESSION:
-                self.get_session()
+                if not self.get_session(user_input): break
             elif self.__gm_state == self.__gm_states.WAIT_FOR_PLAYERS:
-                self.waiting_for_players()
+                if not self.waiting_for_players(): break
             elif self.__gm_state == self.__gm_states.NEED_PUTNUMBER:
                 self.putNumber(user_input)
-        
+        	        
+	
         self.__io.output_sync('Q entered, disconnecting ...')
 
     def notifications_loop(self):
@@ -345,6 +370,7 @@ class Client():
                 break
             self.__protocol_rcv(m)
 
+
 if __name__ == '__main__':
     srv_addr = ('127.0.0.1',7777)
 
@@ -355,7 +381,7 @@ if __name__ == '__main__':
     notifications_thread =\
             Thread(name='NotificationsThread',target=client.notifications_loop)
     notifications_thread.start()
-    client.game_loop()
+    #client.game_loop()
     try:
         client.game_loop()
     except KeyboardInterrupt:
@@ -363,8 +389,8 @@ if __name__ == '__main__':
     finally:
         client.stop()
         
-    if self.network_thread != None:
-        self.network_thread.join()
+    if client.network_thread != None:
+        client.network_thread.join()
     notifications_thread.join()
 
     logging.info('Terminating')
