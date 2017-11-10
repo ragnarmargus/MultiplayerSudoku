@@ -6,7 +6,6 @@ import copy
 WRONG_ANSWER = 0
 RIGHT_ANSWER = 1
 NUMBER_EXISTS = 2
-GAME_FINISHED = 3
 LEVEL = 30
 
 
@@ -121,11 +120,14 @@ class Sudoku():
                 break
         return ans
 
-    def sudoku_to_string(sud):
+    def sudoku_to_string(self):
+        ## TODO: x, y swap | Lisada disain
+        ## KUI kasutab mingid protokolli symbolit, siis muuta protokoll 2ra
         out_str = ''
-        for i in sud:
+        for i in self.current:
             for j in i:
                 out_str += str(j)
+            out_str += '\n'
         return out_str
 
 

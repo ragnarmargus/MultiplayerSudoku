@@ -46,10 +46,10 @@ class serverClass(object):
                 self.lobbyList.remove(c)
 
     def addToLobby(self,c_list):
-	for c in c_list:
+        for c in c_list:
             c.session=None
-            c.send_notification('Available Sessions: %s' \
-                        %''.join(map(lambda x: '\n  '+\
+            c.send_notification('Available Sessions: %s'
+                        %''.join(map(lambda x: '\n  ' +
                         x.getSessInfo(),self.getSessions())))
         with self.lobbyListLock:
             self.lobbyList += c_list
@@ -102,7 +102,7 @@ class serverClass(object):
                 client_socket = None
                 LOG.info( 'Awaiting new clients ...' )
                 client_socket,client_addr = self.s.accept()
-                c = clientHandler(client_socket,self)                
+                c = clientHandler(client_socket, self)
                 self.clientList.append(c)
                 self.addToLobby([c])
                 c.start()
@@ -112,7 +112,7 @@ class serverClass(object):
             if client_socket != None:
                 client_socket.close()
             self.s.close()
-        map(lambda x: x.join(),clients)
+        map(lambda x: x.join(), clients)
 
 if __name__ == '__main__':
     server = serverClass()

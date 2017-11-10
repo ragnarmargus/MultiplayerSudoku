@@ -9,6 +9,7 @@ from messageProtocol import *
 from clientHandler import *
 from serverMain import *
 from threading import Thread, Lock, currentThread
+from sudoku_new import *
 
 
 class sessionClass():
@@ -16,8 +17,7 @@ class sessionClass():
         self.Server = Server
         self.sessName = sessName
         self.clients = []
-        self.tableCur = ''.join(map(lambda x: str(x), range(1,10)))*9
-        self.tableAns = '' # TODO
+        self.Sdku = Sudoku(LEVEL)
         self.maxClients = maxClients
         self.gameRunning = False
 
@@ -31,7 +31,7 @@ class sessionClass():
     def send_specific_update(self,header,msg):
         joined = filter(lambda x: x.session!=None, self.clients)
         print joined
-        map(lambda x: x.send_specific(header,msg), joined)
+        map(lambda x: x.send_specific(header, msg), joined)
 
     def getSessInfo(self):
         return self.sessName+'-'\
@@ -48,7 +48,8 @@ class sessionClass():
                 self.Server.removeFromLobby(c)
                 if len(self.clients) == self.maxClients:
                     self.gameRunning = True
-                    self.send_specific_update(REP_TABLE,self.tableCur)
+                    self.send_specific_update(
+                        REP_TABLE,self.Sdku.sudoku_to_string())
                 return True
             return False
 
@@ -63,13 +64,9 @@ class sessionClass():
         if (len(self.clients)<2 and self.gameRunning) or len(self.clients)==0:
             self.send_specific_update(REP_SCORES_GAME_OVER,\
 				'Winner: %s' %self.findHighScore())
-	    #if self in self.Server.getSessions():
-            #    sessList = (self.Server.getSessions()).remove(self)
-            #MSG = str(map(lambda x: x.getSessInfo(), self.Server.sessionList))
             self.Server.removeSession(self)
             self.Server.addToLobby(self.clients)
             self.clients = []
-            #self.Server.removeSession(self)
             logging.info('Session %s closing - too few players' %self.sessName)
             
 
@@ -77,8 +74,8 @@ class sessionClass():
         msg = ", ".join(map(lambda x: x.getScoreNickname(), self.clients))
         return msg
 
-    def findHighScore(self):
-        best = None
+    def findHighScore(self):   ############ TODO : kui on viik, v6i mitu sama
+        best = None # punktidega, siis tagastatakse ikka  1 m2ngija nimi
         score = -99999        
         for c in self.clients:
             if c.score > score:
@@ -86,28 +83,27 @@ class sessionClass():
                 score = c.score
         return str(best)+'-'+str(score)+'points'
 
-    def putNumber(self, number, x, y, client):                
+    def putNumber(self, x, y, number, client):
         with self.tableLock:
-            if False: # if position occupied
+            logging.info('%s wants to put x=%d y=%d...%d'
+                         % (client.nickname,x,y,number))
+            put_table_result = self.Sdku.set_nr(x-1,y-1,number)
+            if put_table_result == NUMBER_EXISTS: # if position occupied
                 msg = 'Cell full'
-            elif False: # if wrong
+            elif put_table_result == WRONG_ANSWER: # if wrong
                 msg = 'Wrong'
                 client.decScore()
-            elif True:  # if correct
+                self.notify_update('Scores: ' + self.getScoresNicknames())
+                self.notify_update('Sudoku table\n' + self.Sdku.sudoku_to_string())
+            elif put_table_result == RIGHT_ANSWER:  # if correct
                 msg = 'Correct'
                 client.incScore()
                 self.notify_update('Scores: '+self.getScoresNicknames())
-                self.send_specific_update(REP_TABLE,self.tableCur)
-                if True: # game over
-                    self.send_specific_update(REP_SCORES_GAME_OVER,\
-				'Winner: %s' %self.findHighScore())
-                    #self.notify_update('Available Sessions: %s' \
-                    #    %''.join(map(lambda x: '\n  '+\
-		    #x.getSessInfo(),self.Server.getSessions())))
-                    #sessList = (self.Server.getSessions()).remove(self)
-                    #MSG = str(map(lambda x: x.getSessInfo(), sessList))
-
-		    self.Server.removeSession(self)
+                self.notify_update('Sudoku table\n'+self.Sdku.sudoku_to_string())
+                if self.Sdku.is_game_over(): # game over
+                    self.send_specific_update(REP_SCORES_GAME_OVER,
+                        'Winner: %s' %self.findHighScore())
+                    self.Server.removeSession(self)
                     self.Server.addToLobby(self.clients)
                     self.clients = []
             return REP_PUT_NR, msg
