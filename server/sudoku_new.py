@@ -106,9 +106,9 @@ class Sudoku():
         self.current,self.solved=make_sudoku(level)
 
     def set_nr(self,a,b,c):
-        if self.current[a,b]==0:
-            if self.solved[a,b] == c:
-                self.current[a,b] = c;
+        if self.current[b,a]==0:
+            if self.solved[b,a] == c:
+                self.current[b,a] = c;
                 return RIGHT_ANSWER
             else:
                 return WRONG_ANSWER
@@ -151,5 +151,9 @@ class Sudoku():
 
 
 if __name__ == '__main__':
-    sudokus = Sudoku(15)
+    sudokus = Sudoku(2)
     print sudokus.sudoku_to_string()
+    while True:
+        inp = raw_input("nr:" )
+        inp = list(inp)
+        print sudokus.set_nr(inp[0],inp[1],inp[2])
