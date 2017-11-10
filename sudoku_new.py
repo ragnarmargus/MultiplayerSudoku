@@ -1,6 +1,12 @@
 import numpy as np
 import random
 
+
+WRONG_ANSWER = 0
+RIGHT_ANSWER = 1
+NUMBER_EXCISTS = 2
+
+
 def check_sudoku(sud):
     row = np.zeros(10, dtype=np.int)
     col = np.zeros(10, dtype=np.int)
@@ -101,12 +107,15 @@ class game():
     def __init__(self,level):
         self.solved,self.current=make_sudoku(level)
 
-    def set_nr(self,a,b,c): #change order of returns if necessary
+    def set_nr(self,a,b,c):
         if self.current[a,b]==0:
             if self.solved[a,b] == c:
-                current[a,b] = c;
-                return 0
+                self.current[a,b] = c;
+                return RIGHT_ANSWER
             else:
-                return 2
+                return WRONG_ANSWER
         else:
-            return 1
+            return NUMBER_EXCISTS
+
+    def check_game_end(self):
+        
