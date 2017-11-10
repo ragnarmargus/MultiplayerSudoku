@@ -3,12 +3,15 @@ import random
 import copy
 
 
+#Responces for the set nr function.
 WRONG_ANSWER = 0
 RIGHT_ANSWER = 1
 NUMBER_EXISTS = 2
+#GLOBAL variable for the difficulty of the sudoku, the amount of numbers removed.
 LEVEL = 2
 
 
+#Function for checking if the input meets the requierments of a sudoku.
 def check_sudoku(sud):
     row = np.zeros(10, dtype=np.int)
     col = np.zeros(10, dtype=np.int)
@@ -29,6 +32,7 @@ def check_sudoku(sud):
             box = np.zeros(10, dtype=np.int)
     return True
 
+#Solves the sudoku and returns a solved sudoku, if there are multible solutions (mul) , if the sudoku provided is solveable (sol).
 def solve_sudoku(sud,mul = False,sol=False):
     tmp = sud.copy()
     for i in range(9):
@@ -46,6 +50,8 @@ def solve_sudoku(sud,mul = False,sol=False):
                 return sud, mul, sol
     if check_sudoku(tmp):
         return sud, mul, True
+
+#An old sudoku maker that is not used.
 def make_sudoku2():
     sud = np.zeros((9,9), dtype=np.int)
     mul = False
@@ -61,6 +67,8 @@ def make_sudoku2():
             sud=tmp.copy()
     return sud
 
+#Sudoku maker that creates a new sudoku board, solves it and starts removing
+#numbers until it satisfies the 'rem' variable, returns a sudoku and its solution.
 def make_sudoku(rem = 2):
     sud = np.zeros((9,9), dtype=np.int)
     a = np.array(range(9))+1
@@ -94,17 +102,21 @@ def make_sudoku(rem = 2):
 
     return sud, solved
 
+
+#Reads the design from Sudoku_design.txt
 def load_design():
     f = open('Sudoku_design.txt','r')
     design = f.read()
     return design
 
 
-
+#Sudoku class that creates a sudoku and has the functions it needs.
 class Sudoku():
     def __init__(self,level):
         self.current,self.solved=make_sudoku(level)
 
+#Set_nr checks if the number given suits the solution, if it does,
+# it replaces a zero with the right number, else it returns the corresponding.
     def set_nr(self,a,b,c):
         if self.current[b,a]==0:
             if self.solved[b,a] == c:
@@ -115,6 +127,7 @@ class Sudoku():
         else:
             return NUMBER_EXISTS
 
+#Checks if the curent table has any zeros left, if not, the game must be over.
     def is_game_over(self):
         ans=False
 
@@ -126,13 +139,12 @@ class Sudoku():
                 break
         return ans
 
-
+#Incorporates the design created in the 'Sudoku_design.txt'
+# returns the designed current game table.
     def sudoku_to_string(self):
         design = load_design()
         design = list(design)
 
-        # TODO: x, y swap | Lisada disain
-        ## KUI kasutab mingid protokolli symbolit, siis muuta protokoll 2ra
         out_str = ''
         for i in self.current:
             for j in i:
@@ -149,9 +161,10 @@ class Sudoku():
         return design
 
 
-
+#If main, then do this:
 if __name__ == '__main__':
-    sudokus = Sudoku(2)
+
+    sudokus = Sudoku(70)
     print sudokus.sudoku_to_string()
     while True:
         inp = raw_input("nr:" )
