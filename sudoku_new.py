@@ -1,10 +1,13 @@
 import numpy as np
 import random
+import copy
 
 
 WRONG_ANSWER = 0
 RIGHT_ANSWER = 1
-NUMBER_EXCISTS = 2
+NUMBER_EXISTS = 2
+GAME_FINISHED = 3
+LEVEL = 30
 
 
 def check_sudoku(sud):
@@ -72,7 +75,7 @@ def make_sudoku(rem = 2):
         if check_sudoku(sud):
             break
     sud,mul,sol = solve_sudoku(sud)
-    solved = sud
+    solved = copy.deepcopy(sud)
     while(True):
         temp = sud
         a = random.randint(0,8)
@@ -90,22 +93,12 @@ def make_sudoku(rem = 2):
         if(rem == removed): break
 
 
-
     return sud, solved
 
-def sud_to_string(sud):
-    out_str=''
-    for i in sud:
-        for j in i:
-            out_str+=str(j)
-    return out_str
 
-def sud_to_string2(sud):
-    return str(sud).replace(" ","").replace("\n", "").replace("[","").replace("]","")
-
-class game():
+class Sudoku():
     def __init__(self,level):
-        self.solved,self.current=make_sudoku(level)
+        self.current,self.solved=make_sudoku(level)
 
     def set_nr(self,a,b,c):
         if self.current[a,b]==0:
@@ -115,7 +108,27 @@ class game():
             else:
                 return WRONG_ANSWER
         else:
-            return NUMBER_EXCISTS
+            return NUMBER_EXISTS
 
-    def check_game_end(self):
-        
+    def is_game_over(self):
+        ans=False
+
+        for elem in self.current:
+            if 0 not in self.current:
+                ans = True
+            else:
+                ans = False
+                break
+        return ans
+
+    def sudoku_to_string(sud):
+        out_str = ''
+        for i in sud:
+            for j in i:
+                out_str += str(j)
+        return out_str
+
+
+if __name__ == '__main__':
+     el = Sudoku(LEVEL)
+     print(el.is_game_over())
