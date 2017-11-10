@@ -94,6 +94,12 @@ def make_sudoku(rem = 2):
 
     return sud, solved
 
+def load_design():
+    f = open('Sudoku_design.txt','r')
+    design = f.read()
+    return design
+
+
 
 class Sudoku():
     def __init__(self,level):
@@ -120,17 +126,30 @@ class Sudoku():
                 break
         return ans
 
+
     def sudoku_to_string(self):
-        ## TODO: x, y swap | Lisada disain
+        design = load_design()
+        design = list(design)
+
+        # TODO: x, y swap | Lisada disain
         ## KUI kasutab mingid protokolli symbolit, siis muuta protokoll 2ra
         out_str = ''
         for i in self.current:
             for j in i:
                 out_str += str(j)
-            out_str += '\n'
-        return out_str
+        x = 0
+        for i in range(len(design)):
+
+            if design[i]=='*':
+                design[i]= out_str[x]
+                x +=1;
+
+        design= ''.join(design)
+
+        return design
+
 
 
 if __name__ == '__main__':
-     el = Sudoku(LEVEL)
-     print(el.is_game_over())
+    sudokus = Sudoku(15)
+    print sudokus.sudoku_to_string()
