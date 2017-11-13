@@ -1,6 +1,6 @@
-# A clientHandler object is created for each client who connects
-# to the server's listener socket. The clientHandler will take
-# action based on clients actions and also allows to notify
+# A clientHandler object is created for each client in serverMain
+# who connects to the server's listener socket. The clientHandler
+# will take action based on clients actions and also allows to notify
 # the changes in game session.
 import logging
 

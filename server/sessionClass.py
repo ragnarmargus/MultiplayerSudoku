@@ -1,3 +1,6 @@
+# Allows clientHandlers to interact with Sudoku instance
+# Keeps track of game status and notifies clients about
+# changes. sessionClass objects are created by clientHandlers
 import logging
 FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
 logging.basicConfig(level=logging.DEBUG,format=FORMAT)
@@ -14,14 +17,16 @@ from sudoku_new import *
 
 class sessionClass():
     def __init__(self, sessName, maxClients, Server):
+        # Server object and session name
         self.Server = Server
         self.sessName = sessName
-        self.clients = []
+        # Initiates a sudoku instance
         self.Sdku = Sudoku(LEVEL)
-        self.maxClients = maxClients
-        self.gameRunning = False
-
         self.tableLock = Lock()
+        # Holds game session clients
+        self.clients = []
+        self.maxClients = maxClients
+        self.gameRunning = False       
         self.clientsLock = Lock()
 
     def notify_update(self,msg):

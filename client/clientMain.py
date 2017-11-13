@@ -1,5 +1,6 @@
 # Main client file. Upon running asks input from the player
-# and communicates with the server.
+# and communicates with the server. clientHandler objects are
+# created in serverMain
 
 import logging, ast
 FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
