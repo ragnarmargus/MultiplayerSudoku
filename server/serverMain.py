@@ -85,6 +85,8 @@ class serverClass(object):
 
     def sessionList2string(self):
         # returns a string of sessions on server + player count
+        if len(self.getSessions())==0:
+            return 'Available Sessions: None'
         return 'Available Sessions: %s' %''.join(map(lambda x: '\n  ' +
                         x.getSessInfo(),self.getSessions()))
          
