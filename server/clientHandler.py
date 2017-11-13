@@ -52,13 +52,15 @@ class clientHandler(Thread):
         LOG.debug('Client %s:%d wants to write to sudoku: %s' \
                   '' % (self.soc.getsockname() + (unparsedInts,)))
         try:
+            if len(unparsedInts) != 3:
+                return REP_NOT_OK, 'Input is not 3 integers'
             ints = list(unparsedInts)
             x, y, number = int(ints[0]), int(ints[1]), int(ints[2])
             for n in [x,y,number]:
                 if n not in range(1,10):
                     REP, MSG = REP_NOT_OK, "nr not in 1...9"
             REP, MSG = self.session.putNumber(x, y, number, self)
-        except:
+        except ValueError:
             REP, MSG = REP_NOT_OK, "Parsing int failed"
         return REP, MSG
 
