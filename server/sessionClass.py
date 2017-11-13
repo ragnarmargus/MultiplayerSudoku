@@ -85,15 +85,19 @@ class sessionClass():
         return msg
 
     def findHighScore(self):
-        # Returns a string of winner(s) with points
-        ############ TODO : kui on viik, v6i mitu sama
+        retString=','
         best = None # punktidega, siis tagastatakse ikka  1 m2ngija nimi
-        score = -99999        
+        score = -99999
+        winners=[]
         for c in self.clients:
             if c.score > score:
                 best = c.nickname
                 score = c.score
-        return str(best)+'-'+str(score)+'points'
+        for c in self.clients:
+            if c.score == score:
+                winners.append(str(c.nickname))
+        retString += retString.join(winners)+' - ' + str(score) + 'points'
+        return  retString
 
     def putNumber(self, x, y, number, client):
         # Takes prechecked x,y,number values (in range 1...9)
