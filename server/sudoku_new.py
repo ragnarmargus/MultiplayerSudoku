@@ -6,7 +6,7 @@ import copy
 WRONG_ANSWER = 0
 RIGHT_ANSWER = 1
 NUMBER_EXISTS = 2
-LEVEL = 30
+LEVEL = 2
 
 
 def check_sudoku(sud):
