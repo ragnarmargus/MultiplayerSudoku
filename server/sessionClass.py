@@ -121,7 +121,7 @@ class sessionClass():
                 self.notify_update('Sudoku table\n'+self.Sdku.sudoku_to_string())
                 if self.Sdku.is_game_over(): # game over
                     self.send_specific_update(REP_SCORES_GAME_OVER,
-                        'Winner: %s' %self.findHighScore())
+                        'Winner(s): %s' %self.findHighScore())
                     self.Server.removeSession(self)
                     self.Server.addToLobby(self.clients)
                     self.clients = []
