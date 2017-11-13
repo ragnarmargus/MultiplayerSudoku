@@ -25,20 +25,26 @@ class sessionClass():
         self.clientsLock = Lock()
 
     def notify_update(self,msg):
+        # can be used to send a message with notify header
         joined = filter(lambda x: x.session!=None, self.clients)
         map(lambda x: x.send_notification(msg), joined)
 
     def send_specific_update(self,header,msg):
+        # can be used to send a message with specific header
         joined = filter(lambda x: x.session!=None, self.clients)
         print joined
         map(lambda x: x.send_specific(header, msg), joined)
 
     def getSessInfo(self):
+        # Returs a string of session name + player count
         return self.sessName+'-'\
                +str(len(self.clients))+'/'\
                +str(self.maxClients)
 
     def addMe(self, c):
+        # Adds a player to the session and removes them from server lobby
+        # Notifies others about the added player and if the session gets
+        # full, starts the game.
         with self.clientsLock:
             if len(self.clients) < self.maxClients:            
                 self.clients.append(c)
@@ -54,6 +60,9 @@ class sessionClass():
             return False
 
     def removeMe(self):
+        # Removes the player from the session. Notifies others
+        # If the session becomes empty or only one player left
+        # sends notification about winner and closes session
         caller = currentThread()
         caller.session = None
         if caller in self.clients:
@@ -71,10 +80,13 @@ class sessionClass():
             
 
     def getScoresNicknames(self):
+        # Returns a string of players+scores
         msg = ", ".join(map(lambda x: x.getScoreNickname(), self.clients))
         return msg
 
-    def findHighScore(self):   ############ TODO : kui on viik, v6i mitu sama
+    def findHighScore(self):
+        # Returns a string of winner(s) with points
+        ############ TODO : kui on viik, v6i mitu sama
         best = None # punktidega, siis tagastatakse ikka  1 m2ngija nimi
         score = -99999        
         for c in self.clients:
@@ -84,7 +96,10 @@ class sessionClass():
         return str(best)+'-'+str(score)+'points'
 
     def putNumber(self, x, y, number, client):
-        with self.tableLock:
+        # Takes prechecked x,y,number values (in range 1...9)
+        # puts them into Sudoku. Prepares the response if the number was
+        # correct/frong/cell full. Correspondingly updates scores
+        # Also notifies the players if sudoku board changed        with self.tableLock:
             logging.info('%s wants to put x=%d y=%d...%d'
                          % (client.nickname,x,y,number))
             put_table_result = self.Sdku.set_nr(x-1,y-1,number)
