@@ -1,3 +1,6 @@
+# Main client file. Upon running asks input from the player
+# and communicates with the server.
+
 import logging, ast
 FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
 logging.basicConfig(level=logging.DEBUG,format=FORMAT)
@@ -14,7 +17,7 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from messageProtocol import *
 
 class Client():
-
+    # Client can be in these states
     __gm_states = enum(
         NEED_NAME = 0,
         NOTCONNECTED = 1,
@@ -23,7 +26,7 @@ class Client():
         WAIT_FOR_PLAYERS = 4,
         NEED_PUTNUMBER = 5
     )
-
+    # messages notified when client state changes
     __gm_ui_input_prompts = {
         __gm_states.NEED_NAME : 'Please input user name!',
         __gm_states.NOTCONNECTED : 'Please enter server IP!',
@@ -50,20 +53,23 @@ class Client():
         # Current state of the game client
         self.__gm_state_lock = Lock()
         self.__gm_state = self.__gm_states.NEED_NAME
+
+        # Stores the server approved name
         self.__my_name = None
         self.__client_sudoku_copy = ''
 
+        # Networking thread is created after the player has choosed a name
         self.network_thread = None
 
     def __state_change(self,newstate):
-        '''Set the new state of the game'''
+        # Set the new state of the game and notifies the player
         with self.__gm_state_lock:
             self.__gm_state = newstate
             logging.debug('Games state changed to [%d]' % newstate)
             self.__io.output_sync(self.__gm_ui_input_prompts[newstate])
 
     def __sync_request(self,header,payload):
-        '''Send request and wait for response'''
+        # Send request and wait for response
         with self.__send_lock:
             req = header + HEADER_SEP + payload
             if self.__session_send(req):
@@ -76,7 +82,7 @@ class Client():
             return None
 
     def __sync_response(self,rsp):
-        '''Collect the received response, notify waiting threads'''
+        # Collect the received response, notify waiting threads
         with self.__rcv_sync_msgs_lock:
             was_empty = len(self.__rcv_sync_msgs) <= 0
             self.__rcv_sync_msgs.append(rsp)
@@ -84,7 +90,7 @@ class Client():
                 self.__rcv_sync_msgs_lock.notifyAll()
 
     def __async_notification(self,msg):
-        '''Collect the received server notifications, notify waiting threads'''
+        # Collect the received server notifications, notify waiting threads
         with self.__rcv_async_msgs_lock:
             was_empty = len(self.__rcv_async_msgs) <= 0
             self.__rcv_async_msgs.append(msg)
@@ -92,7 +98,7 @@ class Client():
                 self.__rcv_async_msgs_lock.notifyAll()
 
     def __session_rcv(self):
-        '''Receive the block of data till next block separator'''
+        # Receive the block of data till next block separator
         m,b = '',''
         try:
             b = self.__s.recv(1)
@@ -120,9 +126,8 @@ class Client():
         return m
 
     def __session_send(self,msg):
-        '''Just wrap the data, append the block separator and send out'''
+        # Sends the data with message end char
         m = msg + MSG_TERMCHR
-
         r = False
         try:
             self.__s.sendall(m)
@@ -141,8 +146,9 @@ class Client():
         return r
 
     def __protocol_rcv(self,message):
-        '''Processe received message:
-        server notifications and request/responses separately'''
+        # Process received messages.
+        # Server notifications, request/responses and game end
+        # messages are processed separately
         logging.debug('Received [%d bytes] in total' % len(message))
         if len(message) < 2:
             logging.debug('Not enough data received from %s ' % message)
@@ -166,7 +172,7 @@ class Client():
             return REP_NOT_OK
 
     def __get_user_input(self):
-        '''Gather user input'''
+        # Gather user input
         try:
             msg = self.__io.input_sync()
             logging.debug('User entered: %s' % msg)
@@ -174,7 +180,8 @@ class Client():
         except InputClosedException:
             return None
 
-    def set_user_name(self,user_input):        
+    def set_user_name(self,user_input):
+        # Locally sets the players name, asks server for verification
         isSuitable = True
         if len(user_input) not in range(1,9):
             for c in user_input:
@@ -191,6 +198,7 @@ class Client():
                 self.send_server_my_name_get_ack()
 
     def send_server_my_name_get_ack(self):
+        # Ask server for name verification
         try:
             rsp = self.__sync_request(REQ_NICKNAME,self.__my_name)
             header,msg = rsp.split(HEADER_SEP)
@@ -204,6 +212,8 @@ class Client():
             self.__io.output_sync('Name verification by client failed %s'%str(e))
 
     def get_connected(self, ip):
+        # Connects to the server, creates networking thread,
+        # calls name verification
         self.__s = socket(AF_INET,SOCK_STREAM)
         srv_addr = (ip,7777)
         try:
@@ -222,12 +232,17 @@ class Client():
             self.__io.output_sync('Can\'t connect to server!')
 
     def get_session(self, create_sess):
+        # Asks the player if to create a new session or join an existing one
+        # guides the player through the process while checking if the input is
+        # valid. Then creates/connects to the session.
         while create_sess not in ['y','n']:
 	    try:
                 create_sess = self.__get_user_input()
             except KeyboardInterrupt:
 		return False
             if create_sess == "Q": return False
+            if create_sess not in ['y','n']:
+                self.__io.output_sync('Please input "y" or "n"...')
         if create_sess == 'y':
             p_count = "0"
             while int(p_count) < 2:
@@ -280,6 +295,8 @@ class Client():
 	return True
 
     def waiting_for_players(self):
+        # loop till the server notifies all the clients have connected
+        # to the game session
         with self.__rcv_sync_msgs_lock:
             while len(self.__rcv_sync_msgs) <= 0:
 		try:
@@ -296,6 +313,8 @@ class Client():
 	return True
 
     def putNumber(self, s):
+        # interacts with server's Sudoku board. Checks if client has
+        # input correctly three numbers in range 1...9
 	if len(s) != 3:
             self.__io.output_sync('Not proper input - did not give three integers')
             return
@@ -315,7 +334,7 @@ class Client():
         
 
     def stop(self):
-        '''Stop the game client'''
+        # Stop the game client (it's socket and notification thread)
         if not self.__s==None:
             try:
                 self.__s.shutdown(SHUT_RD)
@@ -327,8 +346,8 @@ class Client():
         self.__async_notification('DIE!')
 
     def game_loop(self):
-        '''Main game loop (assuming network-loop and notifications-loop are
-        running already'''
+        # Main game loop (notifications-loop are running already)
+        # Networking thread gets started along the way
         
         self.__io.output_sync('Press Enter to initiate input, ')
         self.__io.output_sync(\
@@ -356,8 +375,8 @@ class Client():
         self.__io.output_sync('Q entered, disconnecting ...')
 
     def notifications_loop(self):
-        '''Iterate over received notifications, show them to user, wait if
-        no notifications'''
+        # Iterate over received notifications, show them to user, wait if
+        # no notifications
 
         logging.info('Falling to notifier loop ...')
         while 1:
@@ -370,7 +389,8 @@ class Client():
             self.__io.output_sync(msg)
 
     def network_loop(self):
-        '''Network Receiver/Message Processor loop'''
+        # Network Receiver/Message Processor loop. Stops if empty char
+        # has been received
         logging.info('Falling to receiver loop ...')
         while 1:
             m = self.__session_rcv()
@@ -389,7 +409,6 @@ if __name__ == '__main__':
     notifications_thread =\
             Thread(name='NotificationsThread',target=client.notifications_loop)
     notifications_thread.start()
-    #client.game_loop()
     try:
         client.game_loop()
     except KeyboardInterrupt:
