@@ -54,9 +54,17 @@ class serverClass(object):
         # sessions on the server
         for c in c_list:
             c.session=None
-            c.send_notification(self.sessionList2string())
+            if c.nickname != None:
+                c.send_notification(self.sessionList2string())
         with self.lobbyListLock:
             self.lobbyList += c_list
+
+    def notify_to_lobby_sessions(self):
+        # sends session list to players in the lobby
+        for c in self.lobbyList:
+            c.session=None
+            if c.nickname != None:
+                c.send_notification(self.sessionList2string())
 
     def getSessions(self):
         # return list of sessions on server

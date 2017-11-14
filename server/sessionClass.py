@@ -61,6 +61,7 @@ class sessionClass():
                     self.gameRunning = True
                     self.send_specific_update(
                         REP_TABLE,self.Sdku.sudoku_to_string())
+                self.Server.notify_to_lobby_sessions()
                 return True
             return False
 
@@ -74,6 +75,7 @@ class sessionClass():
             self.clients.remove(caller)
             self.notify_update(caller.nickname+' joined game')
             logging.info('%s left game' % caller.getNickname())
+        self.Server.notify_to_lobby_sessions()
 
         if (len(self.clients)<2 and self.gameRunning) or len(self.clients)==0:
             self.send_specific_update(REP_SCORES_GAME_OVER,\
