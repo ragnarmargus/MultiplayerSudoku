@@ -17,6 +17,8 @@ from threading import Thread, Lock, currentThread
 from socket import AF_INET, SOCK_STREAM, socket
 from socket import error as soc_err
 
+from argparse import ArgumentParser
+
 class serverClass(object):
     def __init__(self):
         # stores clients not in game session
@@ -143,7 +145,12 @@ class serverClass(object):
         map(lambda x: x.join(), clients)
 
 if __name__ == '__main__':
+    parser = ArgumentParser(description="Tic tac toe game server")
+    parser.add_argument('-a', '--server-addr',
+                        help="Listening address. Default localhost.",
+                        default='127.0.0.1')
+    args = parser.parse_args()
     server = serverClass()
-    server.listen(('127.0.0.1',7777))
+    server.listen((args.server_addr,7777))
     server.loop()
     LOG.info('Terminating ...')

@@ -99,7 +99,7 @@ class sessionClass():
                 best = c.nickname
                 score = c.score
         winners = filter(lambda x: x.score == score, self.clients)
-        return ','.join(map(lambda x: x.nickname, winners))+' - ' + str(score) + 'points'
+        return ','.join(map(lambda x: x.nickname, winners))+' - ' + str(score) + ' points'
 
     def putNumber(self, x, y, number, client):
         # Takes prechecked x,y,number values (in range 1...9)
