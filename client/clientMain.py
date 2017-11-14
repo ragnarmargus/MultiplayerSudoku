@@ -3,8 +3,11 @@
 # created in serverMain
 
 import logging, ast
+from tempfile import mktemp
+logfile = mktemp()
 FORMAT='%(asctime)s (%(threadName)-2s) %(message)s'
-logging.basicConfig(level=logging.DEBUG,format=FORMAT)
+logging.basicConfig(filename=logfile,\
+                            filemode='a',level=logging.DEBUG,format=FORMAT)
 LOG = logging.getLogger()
 
 from threading import Thread, Condition, Lock, currentThread
@@ -133,7 +136,6 @@ class Client():
         try:
             self.__s.sendall(m)
             r = True
-            print m, r
         except KeyboardInterrupt:
             self.__s.close()
             logging.info( 'Ctrl+C issued, terminating ...' )
