@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 import random
 import copy
@@ -102,14 +103,6 @@ def make_sudoku(rem = 2):
 
     return sud, solved
 
-
-#Reads the design from Sudoku_design.txt
-def load_design():
-    f = open('Sudoku_design.txt','r')
-    design = f.read()
-    return design
-
-
 #Sudoku class that creates a sudoku and has the functions it needs.
 class Sudoku():
     def __init__(self,level):
@@ -142,7 +135,20 @@ class Sudoku():
 #Incorporates the design created in the 'Sudoku_design.txt'
 # returns the designed current game table.
     def sudoku_to_string(self):
-        design = load_design()
+        design = """ x-1-2-3---4-5-6---7-8-9
+y╔═══════╦═══════╦═══════╗
+1║ * * * ║ * * * ║ * * * ║
+2║ * * * ║ * * * ║ * * * ║
+3║ * * * ║ * * * ║ * * * ║
+|╠═══════╬═══════╬═══════╣
+4║ * * * ║ * * * ║ * * * ║
+5║ * * * ║ * * * ║ * * * ║
+6║ * * * ║ * * * ║ * * * ║
+|╠═══════╬═══════╬═══════╣
+7║ * * * ║ * * * ║ * * * ║
+8║ * * * ║ * * * ║ * * * ║
+9║ * * * ║ * * * ║ * * * ║
+ ╚═══════╩═══════╩═══════╝"""
         design = list(design)
 
         out_str = ''

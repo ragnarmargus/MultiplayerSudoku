@@ -90,19 +90,14 @@ class sessionClass():
         return msg
 
     def findHighScore(self):
-        retString=','
-        best = None # punktidega, siis tagastatakse ikka  1 m2ngija nimi
         score = -99999
-        winners=[]
+
         for c in self.clients:
             if c.score > score:
                 best = c.nickname
                 score = c.score
-        for c in self.clients:
-            if c.score == score:
-                winners.append(str(c.nickname))
-        retString += retString.join(winners)+' - ' + str(score) + 'points'
-        return  retString
+        winners = filter(lambda x: x.score == score, self.clients)
+        return ','.join(map(lambda x: x.nickname, winners))+' - ' + str(score) + 'points'
 
     def putNumber(self, x, y, number, client):
         # Takes prechecked x,y,number values (in range 1...9)
@@ -126,7 +121,7 @@ class sessionClass():
                 self.notify_update('Sudoku table\n'+self.Sdku.sudoku_to_string())
                 if self.Sdku.is_game_over(): # game over
                     self.send_specific_update(REP_SCORES_GAME_OVER,
-                        'Winner: %s' %self.findHighScore())
+                        'Winner(s): %s' %self.findHighScore())
                     self.Server.removeSession(self)
                     self.Server.addToLobby(self.clients)
                     self.clients = []
