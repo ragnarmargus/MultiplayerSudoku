@@ -16,8 +16,8 @@ logging.basicConfig(level=logging.DEBUG,\
 logging.getLogger("pika").setLevel(logging.WARNING)
 
 # Somewhi KeyRelease event doesn't recognise keys with KP_number events
-KB_map = {1:'KP_End', 2:'KP_Down', 3:'KP_Next', 4:'KP_Left',
-        5:'KP_Begin', 6:'KP_Right', 7:'KP_Home', 8:'KP_Up', 9:'KP_Prior'}
+KB_map = {1: 'KP_End', 2: 'KP_Down', 3: 'KP_Next', 4: 'KP_Left',
+          5: 'KP_Begin', 6: 'KP_Right', 7: 'KP_Home', 8: 'KP_Up', 9: 'KP_Prior'}
 
 class ClientQUI:
     def __init__(self, master):
@@ -132,7 +132,7 @@ class ClientQUI:
 
     ## Bound to GUI events:
     def is_num(self, action, index, value_if_allowed, prior_value, text, validation_type, trigger_type, widget_name):
-        # validating Sudoku entries
+        # validating Sudoku entries, only allows numbers 1...9
         if action == '1':  # action=1 -> insert
             if prior_value == value_if_allowed[-1]:
                 return False
@@ -144,7 +144,7 @@ class ClientQUI:
         return True  # allow deleting
 
     def act_upon_sudoku_insert(self, event):
-        # acting upon correct Sudoku entry number_keyRelease
+        # acting upon correct Sudoku entry number_keyRelease event
         w = event.widget
         value = w.get()[-1]
         w.delete(0, END)
@@ -196,7 +196,7 @@ class ClientQUI:
     def join_session(self, sess_name):
         if self.leave_session(None):
             self.disable_sudoku('Joining session...')
-            #result, state = ask server join room. False:msg = why failed... True:'wait' // paneme notify msg abil m2ngu k2ima
+            # result, state = ask server join room. False:msg = why failed... True:'wait' // paneme notify msg abil m2ngu k2ima
             result, state = True, 'Waiting for players'
             if result:
                 self.current_session = sess_name
@@ -204,7 +204,7 @@ class ClientQUI:
             else:
                 self.master.title('Sudoku')
             self.disable_sudoku(state)
-            if result:# delete next lines - for testing only
+            if result:  # delete next lines - for testing only
                 self.insert_sudoku_start(
                     '1f,2f,3f,4f,5f,6f,7f,8f,9f,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_')
 
