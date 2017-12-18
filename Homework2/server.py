@@ -73,11 +73,11 @@ class Server:
         print 'NOTIFY - key [%s] - msg [%s]' % (routing, msg)
         self.ch.basic_publish(exchange=self.server_name+'direct_notify', routing_key=routing, body=msg, )
 
-    def notify_named_clients(self, header, msg, client_names):
-        msg = header + ':' + msg
-        for c in client_names:
-            print 'NOTIFY - key [%s] - msg [%s]' % (c, msg)
-            self.ch.basic_publish(exchange=self.server_name+'direct_notify', routing_key=c, body=msg, )
+    # def notify_named_clients(self, header, msg, client_names):
+    #     msg = header + ':' + msg
+    #     for c in client_names:
+    #         print 'NOTIFY - key [%s] - msg [%s]' % (c, msg)
+    #         self.ch.basic_publish(exchange=self.server_name+'direct_notify', routing_key=c, body=msg, )
 
     def request_name(self, name):
         if name in self.rooms or name in self.clients:

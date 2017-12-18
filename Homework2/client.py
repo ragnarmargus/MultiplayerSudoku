@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.DEBUG,\
                     format='%(asctime)s (%(threadName)-2s) %(message)s',)
 logging.getLogger("pika").setLevel(logging.WARNING)
 
-# Somewhi KeyRelease event doesn't recognise keys with KP_number events
+# Somewhy KeyRelease event doesn't recognise keys with KP_number events
 KB_map = {1: 'KP_End', 2: 'KP_Down', 3: 'KP_Next', 4: 'KP_Left',
           5: 'KP_Begin', 6: 'KP_Right', 7: 'KP_Home', 8: 'KP_Up', 9: 'KP_Prior'}
 
@@ -79,7 +79,7 @@ class ClientQUI:
         self.notifybox.grid(            row=0, column=3, rowspan=3, columnspan=5, sticky=W + E + S + N)
         self.sudoku_and_score.grid(     row=4, column=3, rowspan=3, columnspan=5, sticky=W + E + S + N)
 
-        self.insert_scores(['Mina 1p', 'Sina 2p']) ## delete it
+        self.insert_scores(['Mina 1p', 'Sina 2p'])  ## delete it
 
     ## Server notification calls:
     def insert_notification(self, msg):
@@ -115,7 +115,7 @@ class ClientQUI:
     def insert_sudoku_start(self, string):
         # server notification should call it, game starts
         insertions = string.split(',')
-        for i in range(len(insertions)):
+        for i in range(len(insertions)):  # if len == 81 ?????
             x, y = i // 9, i % 9
             value, how = insertions[i][0], insertions[i][1]
             self.insert_sudoku_cell(value, how, x, y)
@@ -141,11 +141,13 @@ class ClientQUI:
             if text in '123456789':  # allow only 1...9 in cell
                 return True
             return False
-        return True  # allow deleting
+        return True  # disable deleting
 
     def act_upon_sudoku_insert(self, event):
         # acting upon correct Sudoku entry number_keyRelease event
         w = event.widget
+        if len(w.get()) == 0:
+            return
         value = w.get()[-1]
         w.delete(0, END)
         w.insert(0, value)
