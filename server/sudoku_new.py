@@ -111,9 +111,9 @@ class Sudoku():
 #Set_nr checks if the number given suits the solution, if it does,
 # it replaces a zero with the right number, else it returns the corresponding.
     def set_nr(self,a,b,c):
-        if self.current[b,a]==0:
+        if self.current[b,a]!=self.solved[b,a]:
+            self.current[b, a] = c;
             if self.solved[b,a] == c:
-                self.current[b,a] = c;
                 return RIGHT_ANSWER
             else:
                 return WRONG_ANSWER
@@ -123,13 +123,10 @@ class Sudoku():
 #Checks if the curent table has any zeros left, if not, the game must be over.
     def is_game_over(self):
         ans=False
-
-        for elem in self.current:
-            if 0 not in self.current:
-                ans = True
-            else:
-                ans = False
-                break
+        if ((self.current == self.solved).all()):
+            ans = True
+        else:
+            ans = False
         return ans
 
 #Incorporates the design created in the 'Sudoku_design.txt'
@@ -166,6 +163,12 @@ y╔═══════╦═══════╦═══════╗
 
         return design
 
+    def sudoku_to_string_without_table(self):
+        out_str = ''
+        for i in self.current:
+            for j in i:
+                out_str +=(str(j))
+        return out_str
 
 #If main, then do this:
 if __name__ == '__main__':
