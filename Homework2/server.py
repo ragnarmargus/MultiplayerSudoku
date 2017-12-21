@@ -87,7 +87,8 @@ class Server:
         self.clients.append(name)
         print 'Added name [%s]' % name
         self.notify_clients('notify_new_client', name)
-        available_rooms = filter(lambda x: len(self.rooms[x][1]) == 0 or name in self.rooms[x][1], self.rooms)
+#       available_rooms = filter(lambda x: len(self.rooms[x][1]) == 0 or name in self.rooms[x][1], self.rooms)
+        available_rooms = self.rooms
         print available_rooms
         return 'True:' + ','.join(available_rooms) + ':' + ','.join(self.clients)
 
@@ -108,10 +109,10 @@ class Server:
             self.notify_clients('notify_left_room', name + ':' + room)
             print 'Removed [%s] from room [%s]' % (name, room)
             if len(self.rooms[room][0]) == 0:  # remove empty room
-                if len(self.rooms[room][1]) == 0:
-                    self.notify_clients('notify_room_closed', room)
-                else:
-                    self.notify_named_clients('notify_room_closed', room, self.rooms[room][1])
+                #if len(self.rooms[room][1]) == 0:
+                self.notify_clients('notify_room_closed', room)
+                #else:
+                #    self.notify_named_clients('notify_room_closed', room, self.rooms[room][1])
                 self.rooms.pop(room)
         print 'State of rooms:', str(self.rooms)
 
@@ -127,14 +128,17 @@ class Server:
         if game_name in self.rooms or game_name in self.clients:
             print 'Game name %s not valid' % game_name
             return False
-        if '' in private_list:
-            print 'Creating public chat [%s]' % game_name
-            self.rooms[game_name] = [[], []]
-            self.notify_clients('notify_new_room', game_name)
-        else:
-            print 'Creating private chat [%s] - %s' % (game_name, str(private_list))
-            self.notify_named_clients('notify_new_room', game_name, private_list)
-            self.rooms[game_name] = [[], private_list]
+ #       if '' in private_list:
+        print 'Creating game [%s]' % game_name
+        sudoku = Sudoku(2)
+        self.rooms[game_name] = [[], sudoku]
+        self.notify_clients('notify_new_room', game_name)
+
+#        else:
+#            print 'Creating private chat [%s] - %s' % (game_name, str(private_list))
+#            self.notify_named_clients('notify_new_room', game_name, private_list)
+#            self.rooms[game_name] = [[], private_list]
+
         print 'Clients have been notified'
         print 'State of rooms:', str(self.rooms)
         return True
@@ -146,7 +150,7 @@ class Server:
             self.notify_named_clients('receive_msg_from', name + ':' + to + ':' + msg, [name, to])
 
 
-server_name = 'tigu'
+server_name = ''
 server = Server(server_name)
 
 try:

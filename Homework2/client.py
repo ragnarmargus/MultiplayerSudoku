@@ -19,6 +19,10 @@ logging.getLogger("pika").setLevel(logging.WARNING)
 KB_map = {1: 'KP_End', 2: 'KP_Down', 3: 'KP_Next', 4: 'KP_Left',
           5: 'KP_Begin', 6: 'KP_Right', 7: 'KP_Home', 8: 'KP_Up', 9: 'KP_Prior'}
 
+
+
+
+
 class ClientQUI:
     def __init__(self, master):
         self.master = master
@@ -80,6 +84,7 @@ class ClientQUI:
         self.sudoku_and_score.grid(     row=4, column=3, rowspan=3, columnspan=5, sticky=W + E + S + N)
 
         self.insert_scores(['Mina 1p', 'Sina 2p'])  ## delete it
+        self.clients = []
 
     ## Server notification calls:
     def insert_notification(self, msg):
@@ -217,6 +222,217 @@ class ClientQUI:
             # notify server about leaving
 
 
+
+    #####################
+    def is_running(self):
+        try:
+            self.master.state()
+            return True
+        except TclError:
+            return False
+
+    def register_con(self, outcon):
+        self.outcon = outcon
+
+    def add_all_rooms_clients(self, rooms, clients):
+        self.clients = clients
+        #for c in clients: self.chattext[c] = ''
+        #map(lambda x: self.activelist.insert(END, x), clients)
+        #map(lambda x: self.inactivelist.insert(END, x), rooms)
+
+    def add_client(self, client):
+        print 'add_client ',client
+        if client not in self.clients:
+            self.clients.append(client)
+            #self.activelist.insert(END, client)
+            self.insert_notification("%s joined server" % client)
+            #self.chattext[client] = ''
+
+
+class Notifications(Thread):
+    # Server calls these RPC functions to notify client
+    def __init__(self, gui):
+        self.gui = gui
+        Thread.__init__(self)
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+        self.ch = self.connection.channel()
+        self.setDaemon(daemonic=True)
+        result = self.ch.queue_declare(exclusive=True)
+        self.notification_queue = result.method.queue
+        self.ch.queue_bind(exchange='direct_notify', queue=self.notification_queue, routing_key='all_clients')
+        self.ch.basic_consume(self.on_receive, no_ack=True, queue=self.notification_queue)
+        self.loop = Event()
+
+    def run(self):
+        self.loop.set()
+        while self.loop.is_set():
+                self.connection.process_data_events()
+        self.connection.close()
+        logging.debug('Notifications thread terminating...')
+
+    def stop(self):
+        self.loop.clear()
+
+    def bind_queue(self, bind_to):
+        self.ch.queue_bind(exchange='direct_notify', queue=self.notification_queue, routing_key=bind_to)
+
+    def unbind_queue(self, unbind):
+        self.ch.queue_unbind(exchange='direct_notify', queue=self.notification_queue, routing_key=unbind)
+
+    def on_receive(self, ch, method, props, body):
+        if not self.gui.is_running(): return
+        logging.debug('NOTIFICATION: ' + body)
+        if body.startswith('receive_msg_from:'):
+            _, who, room, msg = body.split(':')
+            self.gui.insertchattext(room, who, msg)
+
+        elif body.startswith('receive_notification:'):
+            self.gui.insert_notification("Server notification: " + body.split(':')[1])
+
+        elif body.startswith('notify_new_client:'):
+            self.gui.add_client(body.split(':')[1])
+
+        elif body.startswith('notify_client_left:'):
+            self.gui.remove_room(body.split(':')[1])
+            self.gui.insert_notification("Client '%s' left server" % body.split(':')[1])
+
+        elif body.startswith('notify_joined_room:'):
+            _, name, room = body.split(':')
+            self.gui.insertchatnotification(room, '%s joined' % name)
+            self.gui.insert_notification("'%s' joined chat '%s'" % (name, room))
+
+        elif body.startswith('notify_left_room:'):
+            _, name, room = body.split(':')
+            self.gui.insertchatnotification(room, '%s left' % name)
+            self.gui.insert_notification("'%s' left chat '%s'" % (name, room))
+
+        elif body.startswith('notify_new_room:'):
+            self.gui.add_room(body.split(':')[1])
+
+        elif body.startswith('notify_room_closed:'):
+            self.gui.remove_room(body.split(':')[1])
+            self.gui.insert_notification("Room '%s' has closed, because it's last member left" % body.split(':')[1])
+
+        elif body.startswith('Stopping:'):
+            self.stop()
+            tkMessageBox.showerror('Server shut down', 'Terminating')
+            self.gui.stop()
+        else:
+            logging.debug('Faulty request [%s]' % body)
+
+
+
+class Communication(object):
+    # Client uses these RPC functions to communicate with server
+    def __init__(self, gui):
+        self.name = 'None'
+
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+        self.ch = self.connection.channel()
+
+        result = self.ch.queue_declare(exclusive=True)
+        self.callback_queue = result.method.queue
+        self.ch.queue_bind(exchange='direct_rpc', queue=self.callback_queue)
+        self.ch.basic_consume(self.on_response, no_ack=True, queue=self.callback_queue)
+
+        self.gui = gui
+        self.receive_notifications = None
+        gui.register_con(self)  # give GUI handler for calling communication functions
+
+    def stop(self, notify_server=True):
+        if self.receive_notifications is not None:
+            self.receive_notifications.stop()
+            self.receive_notifications.join()
+        logging.debug('Requesting leave from server...')
+        if notify_server:
+            self.call('leave:' + self.name)
+        logging.debug('Stopped communication...')
+
+    def on_response(self, ch, method, props, body):
+        if self.corr_id == props.correlation_id:
+            self.response = body
+
+    def call(self, body):
+        self.response = None
+        self.corr_id = str(uuid4())
+        self.ch.basic_publish(exchange='direct_rpc', routing_key='rpc_queue',
+                              properties=pika.BasicProperties(reply_to = self.callback_queue,
+                                                              correlation_id = self.corr_id, ),
+                              body=body)
+        logging.debug('Waiting RPC response for [%s]... ' % body)
+        tries = 5
+        while self.response is None:
+            self.connection.process_data_events(1)
+            tries -= 1
+            if tries == 0:
+                logging.debug('Server reply timeout (5s)')
+                self.gui.on_closing(notify_server=False)
+                return 'False-err'
+        logging.debug('RPC response: [%s]' % self.response)
+        return self.response
+
+    def request_name_ok(self, name):
+        self.name = name
+        logging.debug('Requesting name [%s]' % name)
+        response = self.call('request_name:' + name)
+        if response.startswith('False-err'):
+            return None
+        if response.startswith('False'):
+            return False
+        _, rooms, clients = response.split(':')
+        clients = clients.split(',')
+        rooms = [] if '' in rooms.split(',') else rooms.split(',')
+        clients.remove(name)
+        self.gui.add_all_rooms_clients(rooms, clients)
+        self.gui.insert_notification('Successfully joined server with name %s' % name)
+        # start receiving notifications
+        self.receive_notifications = Notifications(self.gui)
+        self.receive_notifications.bind_queue(name)
+        self.receive_notifications.start()
+        return True
+
+    def leave_room(self, chat_name):
+        self.call('leave_room' + ':' + self.name + ':' + chat_name)
+        self.receive_notifications.unbind_queue(chat_name)
+
+    def join_room(self, chat_name):
+        self.call('join_room' + ':' + self.name + ':' + chat_name)
+        self.receive_notifications.bind_queue(chat_name)
+
+    def create_room(self, chat_name, private_list):
+        body = 'create_room' + ':' + chat_name + ':' + ','.join(private_list)
+        return True if self.call(body) == 'True' else False
+
+    def send_msg(self, to, msg):
+        self.call('send_msg' + ':' + self.name + ':' + to + ':' + msg)
+
+
 root = Tk()
 gui = ClientQUI(root)
-root.mainloop()
+#root.mainloop()
+try:
+    com = Communication(gui)
+
+    info_text = "Connecting..."
+    while True:
+        MY_NAME = tkSimpleDialog.askstring(info_text, "Enter your name")
+        info_text = 'Name refused'
+        if MY_NAME == '' or MY_NAME is None:  # don't start application
+            gui.on_closing()
+            break
+        result = com.request_name_ok(MY_NAME)
+        if result is None:  # server timeout
+            break
+        if result == True:  # server agreed name
+            root.deiconify()  # show TK again
+            try:
+                root.mainloop()
+            except KeyboardInterrupt:
+                logging.debug('CTRL-C pressed...')
+                gui.on_closing()
+            break
+
+except pika.exceptions.ChannelClosed:
+    logging.info('No server found...')
+
+logging.info('Terminating application...')
