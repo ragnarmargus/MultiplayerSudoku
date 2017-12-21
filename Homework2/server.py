@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import pika
+from sudoku import *
 
 
 class Server:
@@ -122,18 +123,18 @@ class Server:
             self.notify_clients('notify_joined_room', name + ':' + room)
             print 'Added [%s] to room [%s]' % (name, room)
 
-    def create_room(self, chat_name, private_list):
-        if chat_name in self.rooms or chat_name in self.clients:
-            print 'Chat name %s not valid' % chat_name
+    def create_room(self, game_name, private_list):
+        if game_name in self.rooms or game_name in self.clients:
+            print 'Game name %s not valid' % game_name
             return False
         if '' in private_list:
-            print 'Creating public chat [%s]' % chat_name
-            self.rooms[chat_name] = [[], []]
-            self.notify_clients('notify_new_room', chat_name)
+            print 'Creating public chat [%s]' % game_name
+            self.rooms[game_name] = [[], []]
+            self.notify_clients('notify_new_room', game_name)
         else:
-            print 'Creating private chat [%s] - %s' % (chat_name, str(private_list))
-            self.notify_named_clients('notify_new_room', chat_name, private_list)
-            self.rooms[chat_name] = [[], private_list]
+            print 'Creating private chat [%s] - %s' % (game_name, str(private_list))
+            self.notify_named_clients('notify_new_room', game_name, private_list)
+            self.rooms[game_name] = [[], private_list]
         print 'Clients have been notified'
         print 'State of rooms:', str(self.rooms)
         return True
