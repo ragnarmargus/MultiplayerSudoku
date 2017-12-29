@@ -51,8 +51,9 @@ class Server:
             self.add_me_to(name, room)
             resp = 'True'
         elif body.startswith('create_room:'):
-            _, chat_name, private_list = body.split(':')
-            resp = 'True' if self.create_room(chat_name, private_list.split(',')) else 'False'
+            _, chat_name, room_size = body.split(':')
+            resp = 'True' if self.create_room(chat_name, int(room_size)) else 'False'
+            #TODO try catch
         elif body.startswith('send_msg:'):
             _, frm, to, msg = body.split(':')
             self.send_msg(frm, to, msg)
@@ -93,7 +94,7 @@ class Server:
         return 'True:' + ','.join(available_rooms) + ':' + ','.join(self.clients)
 
     def remove_me(self, name):
-        print 'Removed', name
+        #print 'Removed', name
         if name != 'None':
             if name in self.clients:
                 self.clients.remove(name)
@@ -105,6 +106,7 @@ class Server:
         if room in self.clients:
             return
         elif room in self.rooms and name in self.rooms[room][0]:
+            self.rooms[room][1].pop(self.rooms[room][0].index(name))
             self.rooms[room][0].remove(name)
             self.notify_clients('notify_left_room', name + ':' + room)
             print 'Removed [%s] from room [%s]' % (name, room)
@@ -117,21 +119,24 @@ class Server:
         print 'State of rooms:', str(self.rooms)
 
     def add_me_to(self, name, room):
+        #print("adding player to room")
         if room in self.clients:
             return
         elif room in self.rooms and name not in self.rooms[room][0]:
             self.rooms[room][0].append(name)
+            self.rooms[room][1].append(0)
             self.notify_clients('notify_joined_room', name + ':' + room)
             print 'Added [%s] to room [%s]' % (name, room)
+            self.send_game_state(room)
 
-    def create_room(self, game_name, private_list):
+    def create_room(self, game_name, room_size):
         if game_name in self.rooms or game_name in self.clients:
             print 'Game name %s not valid' % game_name
             return False
  #       if '' in private_list:
         print 'Creating game [%s]' % game_name
         sudoku = Sudoku(2)
-        self.rooms[game_name] = [[], sudoku]
+        self.rooms[game_name] = [[], [],sudoku]
         self.notify_clients('notify_new_room', game_name)
 
 #        else:
@@ -149,6 +154,13 @@ class Server:
         if to in self.clients:
             self.notify_named_clients('receive_msg_from', name + ':' + to + ':' + msg, [name, to])
 
+    def send_game_state(self,room):
+        self.notify_clients('notify_game_state', ','.join(self.rooms[room][0]) +\
+                            ':' + ','.join(str(x) for x in self.rooms[room][1]) +\
+                            ':' + self.rooms[room][2].sudoku_to_string_without_table(True))
+
+
+#TODO 'notify_scores:'
 
 server_name = ''
 server = Server(server_name)

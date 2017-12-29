@@ -166,11 +166,15 @@ class ClientQUI:
             return
         sess_name, player_count = result[0], result[1]
         # success = call server for session creation
-        success = True
-        success = 'succeeded' if success else 'failed'
-        self.insert_notification("Created game '%s' for %d %s" % (sess_name, player_count, success))
+        success = self.outcon.create_room(sess_name, player_count)
+        #success = 'succeeded' if  else 'failed'
 
-        self.insert_new_session(sess_name)  # testing - delete it
+        if success:
+            self.insert_notification("Created game '%s' for %d" % (sess_name, player_count))
+            self.insert_new_session(sess_name)  # testing - delete it
+            self.join_session(sess_name)
+        else:
+            self.insert_notification("Failed to create '%s' for %d" % (sess_name, player_count))
 
     def leave_session(self, evt):
         # Called when 'Leave' button is pressed or when window closes or when changing session
@@ -179,6 +183,8 @@ class ClientQUI:
         if not tkMessageBox.askyesno('Are you sure?', 'About to leave active session...'):
             return False
         # ask server to leave session
+        self.outcon.leave_room(self.current_session)
+        self.insert_notification("Left room %s" %(self.current_session))
         self.current_session = None
         self.master.title('Sudoku')
         self.disable_sudoku('Join or create a Sudoku session')
@@ -204,6 +210,7 @@ class ClientQUI:
         if self.leave_session(None):
             self.disable_sudoku('Joining session...')
             # result, state = ask server join room. False:msg = why failed... True:'wait' // paneme notify msg abil m2ngu k2ima
+            self.outcon.join_room(sess_name)
             result, state = True, 'Waiting for players'
             if result:
                 self.current_session = sess_name
@@ -211,9 +218,9 @@ class ClientQUI:
             else:
                 self.master.title('Sudoku')
             self.disable_sudoku(state)
-            if result:  # delete next lines - for testing only
-                self.insert_sudoku_start(
-                    '1f,2f,3f,4f,5f,6f,7f,8f,9f,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_')
+            #if result:  # delete next lines - for testing only
+                #self.insert_sudoku_start(
+                #    '1f,2f,3f,4f,5f,6f,7f,8f,9f,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_,0_')
 
     def on_closing(self):
         if self.leave_session(None):
@@ -238,7 +245,7 @@ class ClientQUI:
         self.clients = clients
         #for c in clients: self.chattext[c] = ''
         #map(lambda x: self.activelist.insert(END, x), clients)
-        #map(lambda x: self.inactivelist.insert(END, x), rooms)
+        map(lambda x: self.session_list.insert(END, x), rooms)
 
     def add_client(self, client):
         print 'add_client ',client
@@ -293,25 +300,41 @@ class Notifications(Thread):
             self.gui.add_client(body.split(':')[1])
 
         elif body.startswith('notify_client_left:'):
-            self.gui.remove_room(body.split(':')[1])
+            #self.gui.remove_room(body.split(':')[1])
+            #TODO Remove client
             self.gui.insert_notification("Client '%s' left server" % body.split(':')[1])
 
         elif body.startswith('notify_joined_room:'):
             _, name, room = body.split(':')
-            self.gui.insertchatnotification(room, '%s joined' % name)
+           # self.gui.insertchatnotification(room, '%s joined' % name)
             self.gui.insert_notification("'%s' joined chat '%s'" % (name, room))
 
         elif body.startswith('notify_left_room:'):
             _, name, room = body.split(':')
-            self.gui.insertchatnotification(room, '%s left' % name)
+            #self.gui.insertchatnotification(room, '%s left' % name)
             self.gui.insert_notification("'%s' left chat '%s'" % (name, room))
 
         elif body.startswith('notify_new_room:'):
-            self.gui.add_room(body.split(':')[1])
+            #self.gui.create_session(body.split(':')[1])
+            self.gui.insert_new_session(body.split(':')[1])
+            self.gui.insert_notification("Room '%s' has been opened" % body.split(':')[1])
 
         elif body.startswith('notify_room_closed:'):
-            self.gui.remove_room(body.split(':')[1])
+            self.gui.remove_session(body.split(':')[1])
             self.gui.insert_notification("Room '%s' has closed, because it's last member left" % body.split(':')[1])
+
+        elif body.startswith('notify_game_state:'):
+            print(body)
+            _, players, points, sudoku_board = body.split(':')
+            players = players.split(',')
+            points = points.split(',')
+            scores = []
+            for i in range(len(players)):
+                scores.append(players[i]+" "+points[i])
+
+            self.gui.insert_scores(scores)
+            self.gui.insert_sudoku_start(sudoku_board)
+            #self.gui.insert_notification("Room '%s' has closed, because it's last member left" % body.split(':')[1])
 
         elif body.startswith('Stopping:'):
             self.stop()
@@ -399,8 +422,9 @@ class Communication(object):
         self.call('join_room' + ':' + self.name + ':' + chat_name)
         self.receive_notifications.bind_queue(chat_name)
 
-    def create_room(self, chat_name, private_list):
-        body = 'create_room' + ':' + chat_name + ':' + ','.join(private_list)
+    def create_room(self, chat_name, room_size):
+        logging.debug("Creating room mofo!")
+        body = 'create_room' + ':' + chat_name + ':' + str(room_size)
         return True if self.call(body) == 'True' else False
 
     def send_msg(self, to, msg):
@@ -416,6 +440,7 @@ try:
     info_text = "Connecting..."
     while True:
         MY_NAME = tkSimpleDialog.askstring(info_text, "Enter your name")
+        #TODO CHECK INPUT FORMAT
         info_text = 'Name refused'
         if MY_NAME == '' or MY_NAME is None:  # don't start application
             gui.on_closing()

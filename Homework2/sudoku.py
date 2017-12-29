@@ -163,12 +163,9 @@ y╔═══════╦═══════╦═══════╗
 
         return design
 
-    def sudoku_to_string_without_table(self):
-        out_str = ''
-        for i in self.current:
-            for j in i:
-                out_str +=(str(j))
-        return out_str
+    def sudoku_to_string_without_table(self,lock):
+        hold = 'f' if lock else ' '
+        return ','.join((str(x)+ hold for x in self.current.reshape((81))))
 
 #If main, then do this:
 if __name__ == '__main__':
