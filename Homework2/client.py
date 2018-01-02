@@ -429,6 +429,7 @@ class Communication(object):
 
 
 root = Tk()
+root.withdraw()  # hide TK for name confirmation period
 gui = ClientQUI(root)
 
 
