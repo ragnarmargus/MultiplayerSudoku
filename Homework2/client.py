@@ -111,8 +111,10 @@ class ClientQUI:
             self.master.title('Sudoku')
             self.current_session = None
 
-    def insert_scores(self, lst = ""):
+    def insert_scores(self, lst=""):
         # Server notification calls this
+        if self.current_session is None:
+            lst = ""
         self.score_list.configure(state='normal')
         self.score_list.delete('1.0', END)
         self.score_list.insert(END, '\n'.join(lst))
