@@ -2,6 +2,16 @@
 import pika
 from sudoku import *
 
+class Room:
+    def __init__(self, game_name, room_size):
+        self.name = game_name
+        self.size = room_size
+        self.players = []
+        self.scores = []
+        self.started = False
+        self.finished = False
+        self.game = Sudoku(2)
+
 
 class Server:
     def __init__(self, server_name):
@@ -53,7 +63,6 @@ class Server:
         elif body.startswith('create_room:'):
             _, chat_name, room_size = body.split(':')
             resp = 'True' if self.create_room(chat_name, int(room_size)) else 'False'
-            #TODO try catch
         elif body.startswith('send_msg:'):
             _, frm, to, msg = body.split(':')
             self.send_msg(frm, to, msg)
@@ -62,6 +71,11 @@ class Server:
             name = body.split(':')[1]
             self.remove_me(name)
             resp = 'True'
+        elif body.startswith('move:'):
+            _, room, player, move = body.split(':')
+            self.check_move(player, room, move)
+            resp = 'True'
+
         else:
             print 'Faulty request [%s]' % body
             resp = 'False'
@@ -88,79 +102,88 @@ class Server:
         self.clients.append(name)
         print 'Added name [%s]' % name
         self.notify_clients('notify_new_client', name)
-#       available_rooms = filter(lambda x: len(self.rooms[x][1]) == 0 or name in self.rooms[x][1], self.rooms)
         available_rooms = self.rooms
         print available_rooms
         return 'True:' + ','.join(available_rooms) + ':' + ','.join(self.clients)
 
     def remove_me(self, name):
-        #print 'Removed', name
         if name != 'None':
             if name in self.clients:
                 self.clients.remove(name)
-            rooms = filter(lambda x: name in self.rooms[x][0], self.rooms)
+            rooms = filter(lambda x: name in self.rooms[x].players, self.rooms)
             map(lambda x: self.remove_me_from(name, x), rooms)
             self.notify_clients('notify_client_left', name)
 
     def remove_me_from(self, name, room):
         if room in self.clients:
             return
-        elif room in self.rooms and name in self.rooms[room][0]:
-            self.rooms[room][1].pop(self.rooms[room][0].index(name))
-            self.rooms[room][0].remove(name)
-            self.notify_clients('notify_left_room', name + ':' + room)
+        elif room in self.rooms and name in self.rooms[room].players:
+            self.rooms[room].scores.pop(self.rooms[room].players.index(name))
+            self.rooms[room].players.remove(name)
+            self.notify_clients('notify_left_room', name + ':' + room, room)
+            self.send_game_state(room)
             print 'Removed [%s] from room [%s]' % (name, room)
-            if len(self.rooms[room][0]) == 0:  # remove empty room
-                #if len(self.rooms[room][1]) == 0:
+
+            if (len(self.rooms[room].players) == 1) and not (self.rooms[room].finished) and (self.rooms[room].started):
+                self.notify_clients('notify_winner', room + ':' + self.rooms[room].players[0])
+                self.rooms[room].finished = True
+
+            elif len(self.rooms[room].players) == 0:  # remove empty room
                 self.notify_clients('notify_room_closed', room)
-                #else:
-                #    self.notify_named_clients('notify_room_closed', room, self.rooms[room][1])
                 self.rooms.pop(room)
+
+
+
         print 'State of rooms:', str(self.rooms)
 
     def add_me_to(self, name, room):
-        #print("adding player to room")
         if room in self.clients:
             return
-        elif room in self.rooms and name not in self.rooms[room][0]:
-            self.rooms[room][0].append(name)
-            self.rooms[room][1].append(0)
-            self.notify_clients('notify_joined_room', name + ':' + room)
+        elif room in self.rooms and name not in self.rooms[room].players:
+            self.rooms[room].players.append(name)
+            self.rooms[room].scores.append(0)
+            self.notify_clients('notify_joined_room', name + ':' + room, room)
             print 'Added [%s] to room [%s]' % (name, room)
-            self.send_game_state(room)
+
+            if (len(self.rooms[room].players) >= self.rooms[room].size) and (not self.rooms[room].started):  # remove empty room
+                self.notify_clients('notify_game_start', "", room)
+                self.rooms[room].started = True
+                self.send_game_state(room)
+
+            elif(self.rooms[room].started):
+                self.send_game_state(room)
+            else:
+                self.send_start_screen(room)
 
     def create_room(self, game_name, room_size):
         if game_name in self.rooms or game_name in self.clients:
             print 'Game name %s not valid' % game_name
             return False
- #       if '' in private_list:
         print 'Creating game [%s]' % game_name
-        sudoku = Sudoku(2)
-        self.rooms[game_name] = [[], [],sudoku]
+        self.rooms[game_name] = Room(game_name, room_size)
         self.notify_clients('notify_new_room', game_name)
-
-#        else:
-#            print 'Creating private chat [%s] - %s' % (game_name, str(private_list))
-#            self.notify_named_clients('notify_new_room', game_name, private_list)
-#            self.rooms[game_name] = [[], private_list]
-
         print 'Clients have been notified'
         print 'State of rooms:', str(self.rooms)
         return True
 
-    def send_msg(self, name, to, msg):
-        if to in self.rooms:
-            self.notify_clients('receive_msg_from', name + ':' + to + ':' + msg, to)
-        if to in self.clients:
-            self.notify_named_clients('receive_msg_from', name + ':' + to + ':' + msg, [name, to])
-
+    # TODO Start new game when the last one finishes OR kick all players when finished
     def send_game_state(self,room):
-        self.notify_clients('notify_game_state', ','.join(self.rooms[room][0]) +\
-                            ':' + ','.join(str(x) for x in self.rooms[room][1]) +\
-                            ':' + self.rooms[room][2].sudoku_to_string_without_table(True))
+        self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +\
+                            ':' + ','.join(str(x) for x in self.rooms[room].scores) +\
+                            ':' + self.rooms[room].game.sudoku_to_string_without_table(), room)
 
+    def send_start_screen(self,room):
+        self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +\
+                            ':' + ','.join(str(x) for x in self.rooms[room].scores) +\
+                            ':' + self.rooms[room].game.splash_screen_without_table(), room)
 
-#TODO 'notify_scores:'
+    def check_move(self,player,room,move):
+        rsp = self.rooms[room].game.set_nr(list(move))
+        if rsp==2:
+            self.notify_clients('notify_winner', room + ':' + self.rooms[room].players[self.rooms[room].scores.index(max(self.rooms[room].scores))])
+            self.rooms[room].finished = True
+        self.rooms[room].scores[(self.rooms[room].players.index(player))] += rsp
+        self.send_game_state(room)
 
 server_name = ''
 server = Server(server_name)

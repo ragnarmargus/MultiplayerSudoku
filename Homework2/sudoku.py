@@ -5,9 +5,10 @@ import copy
 
 
 #Responces for the set nr function.
-WRONG_ANSWER = 0
+WRONG_ANSWER = -1
 RIGHT_ANSWER = 1
-NUMBER_EXISTS = 2
+NUMBER_EXISTS = 0
+NUMBER_WINNER = 2
 #GLOBAL variable for the difficulty of the sudoku, the amount of numbers removed.
 LEVEL = 2
 
@@ -108,12 +109,20 @@ class Sudoku():
     def __init__(self,level):
         self.current,self.solved=make_sudoku(level)
 
+        self.splash_screen = self.create_splash_screen()
+
 #Set_nr checks if the number given suits the solution, if it does,
 # it replaces a zero with the right number, else it returns the corresponding.
-    def set_nr(self,a,b,c):
+    def set_nr(self,move):
+        a, b, c = move
+        a = int(a)
+        b = int(b)
+        c = int(c)
         if self.current[b,a]!=self.solved[b,a]:
             self.current[b, a] = c;
             if self.solved[b,a] == c:
+                if np.all(self.current==self.solved):
+                    return NUMBER_WINNER
                 return RIGHT_ANSWER
             else:
                 return WRONG_ANSWER
@@ -163,11 +172,27 @@ y╔═══════╦═══════╦═══════╗
 
         return design
 
-    def sudoku_to_string_without_table(self,lock):
-        hold = 'f' if lock else ' '
-        return ','.join((str(x)+ hold for x in self.current.reshape((81))))
+    def sudoku_to_string_without_table(self):
 
-#If main, then do this:
+        status = (self.current==self.solved).reshape((81))
+        current = self.current.reshape((81))
+
+        rsp = [None] * 81
+        for i in range (len(status)):
+            if status[i] == True:
+                rsp[i] = str(current[i]) + "f"
+            else:
+                rsp[i] = str(current[i]) + " "
+
+        return ','.join(rsp)
+
+    def splash_screen_without_table(self):
+        return ','.join((str(x)+ 'f' for x in self.splash_screen))
+
+    def create_splash_screen(self):
+        str = "008000800008888800808888808888888888080888080088000880808888808088888880088888880"
+        return list(str)
+
 if __name__ == '__main__':
 
     sudokus = Sudoku(70)
