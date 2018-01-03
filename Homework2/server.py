@@ -49,6 +49,7 @@ class Server:
         self.ch.exchange_declare(exchange=self.server_name+'direct_rpc', exchange_type='direct')
         # Start consuming on direct_rpc queue
         self.ch.queue_bind(exchange=self.server_name+'direct_rpc', queue=self.server_name+'rpc_queue', routing_key='rpc_queue')
+        self.ch.basic_qos(prefetch_count=50)
         self.ch.basic_consume(self.on_request, queue=self.server_name+'rpc_queue')
 
         self.clients = []  # stores clients on the server

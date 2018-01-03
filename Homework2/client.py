@@ -8,7 +8,7 @@ from uuid import uuid4
 from threading import Thread, Event
 import tkMessageBox
 from dialog2 import MyDialog
-from time import time
+from time import time, sleep
 
 import logging
 logging.basicConfig(level=logging.DEBUG,\
@@ -33,6 +33,7 @@ class ServerFinder:
         result = self.channel.queue_declare(exclusive=True)
         self.queue_name = result.method.queue
         self.channel.queue_bind(exchange='online_servers', queue=self.queue_name, routing_key='server_names')
+        self.channel.basic_qos(prefetch_count=10)
         self.channel.basic_consume(self.pika_callback, queue=self.queue_name)
 
         # setup TKinter
@@ -104,7 +105,6 @@ class ServerFinder:
         # selecting session from session list calls this
         w = evt.widget
         if len(w.curselection()) != 0:
-            print self.srv_list.get(w.curselection()[0])
             self.server = self.srv_list.get(w.curselection()[0])
             self.on_closing()
 
@@ -382,13 +382,15 @@ class Notifications(Thread):
         self.notification_queue = result.method.queue
         self.ch.queue_bind(exchange=self.server_name + 'direct_notify',
                            queue=self.notification_queue, routing_key='all_clients')
+        self.ch.basic_qos(prefetch_count=10)
         self.ch.basic_consume(self.on_receive, no_ack=True, queue=self.notification_queue)
         self.loop = Event()  # used to kill the thread
 
     def run(self):
         self.loop.set()
         while self.loop.is_set():
-                self.connection.process_data_events()
+            sleep(0.05)
+            self.connection.process_data_events()
         self.connection.close()
         logging.debug('Notifications thread terminating...')
 
@@ -481,6 +483,7 @@ class Communication(object):
         result = self.ch.queue_declare(exclusive=True)
         self.callback_queue = result.method.queue  # expect RPC replies here
         self.ch.queue_bind(exchange=self.server_name + 'direct_rpc', queue=self.callback_queue)
+        self.ch.basic_qos(prefetch_count=10)
         self.ch.basic_consume(self.on_response, no_ack=True, queue=self.callback_queue)
 
         self.gui = gui
