@@ -365,7 +365,6 @@ class ClientQUI:
         self.outcon = outcon
 
 
-
 # Sets up a thread which listens for server notifications.
 # Listens on /*server_name*/direct_notify exchange, with routing key 'all_clients'.
 # Additional keys are binded, when client connects to a session. (unbinded on leave)
