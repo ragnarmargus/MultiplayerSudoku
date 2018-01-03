@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 from Tkinter import *
 from sys import exit
-import tkMessageBox
-import logging
 import tkSimpleDialog
 from ScrolledText import ScrolledText
 import pika
@@ -17,13 +15,19 @@ logging.basicConfig(level=logging.DEBUG,\
                     format='%(asctime)s (%(threadName)-2s) %(message)s',)
 logging.getLogger("pika").setLevel(logging.WARNING)
 
-# Somewhy KeyRelease event doesn't recognise keys with KP_number events
+# KeyRelease events seem to be device specific. for Samsung rf511 numpad it was necessary to bind these release events:
 KB_map = {1: 'KP_End', 2: 'KP_Down', 3: 'KP_Next', 4: 'KP_Left',
           5: 'KP_Begin', 6: 'KP_Right', 7: 'KP_Home', 8: 'KP_Up', 9: 'KP_Prior'}
 
 
+# This class handles server finding. It listens for server broadcast messages, which are sent every second.
+# If no broadcast is heard from a server in 3 seconds, it is thought to be killed. Servers also send 'dead' messages
+# when they die, so they can be removed from the GUI list.
+# The information is shown in a graphical list. If a server is chosen, the class object will be killed and client will
+# connect. If no server is chosen, client application will be killed
 class ServerFinder:
     def __init__(self):
+        # setup pika connection for listening broadcasts
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
         self.channel = self.connection.channel()
         result = self.channel.queue_declare(exclusive=True)
@@ -31,6 +35,7 @@ class ServerFinder:
         self.channel.queue_bind(exchange='online_servers', queue=self.queue_name, routing_key='server_names')
         self.channel.basic_consume(self.pika_callback, queue=self.queue_name)
 
+        # setup TKinter
         self.master = Tk()
         self.master.title('Search')
 
@@ -50,8 +55,8 @@ class ServerFinder:
         self.server = None
         self.server_names = dict()
 
+        # start looping
         self.is_closing = Event()
-
         self.install_find_server_callback()
         try:
             self.is_closing.clear()
@@ -59,6 +64,8 @@ class ServerFinder:
         except KeyboardInterrupt:
             self.server = None
 
+    # consumes messages from pika exchange 'online_servers' with routing key 'server_names'
+    # updates server_names dict with last heard times based on the message
     def pika_callback(self, ch, method, properties, body):
         try:
             name, last_update = body.split('#')
@@ -66,6 +73,8 @@ class ServerFinder:
         except:
             pass
 
+    # Sets TK to periodically check for pika messages.
+    # Avoids using threads (TK doesn't like being interacted with out of the main thread)
     def install_find_server_callback(self):
         def find_event():
             try:
@@ -79,16 +88,18 @@ class ServerFinder:
                     self.master.destroy()
                     self.connection.close()
             except:
-                self.master.destroy() #  channel closed
+                self.master.destroy()  # channel closed
         if not self.is_closing.is_set():
             self.master.after(1000 // 100, find_event)
         else:
             self.master.destroy()
             self.connection.close()
 
+    # Returns self.server, which contains user chosen server name or None
     def return_server_name(self):
         return self.server
 
+    # updates self.server based on mouse click. Initiates ServerFinder object closing
     def get_server(self, evt):
         # selecting session from session list calls this
         w = evt.widget
@@ -97,17 +108,23 @@ class ServerFinder:
             self.server = self.srv_list.get(w.curselection()[0])
             self.on_closing()
 
+    # Sets is_closing flag. This forbids install_find_server_callback to install new callbacks
     def on_closing(self):
         self.is_closing.set()
 
 
+# Main GUI which allows creating and leaving from sessions,
+# allows to play Sudoku, displays notifications and scores.
+# Class functions are divided into:
+#   1. server notification calls - allows the server to show available sessions, scores, notifications...
+#   2. server interactions - based on client's interactions, interacts with the server (like insert a Sudoku number)
 class ClientQUI:
     def __init__(self, master):
         self.master = master
         self.master.resizable(False, False)
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.master.title('Sudoku')
-        self.current_session = None  ## maybe use for warning, when changing sess, while in a session
+        self.current_session = None  ## used for warning, when changing sess, while in a session
 
         ## Create buttons for creating and leaving sessions
         self.create_session_button = Button(master, text="New game")
@@ -135,7 +152,6 @@ class ClientQUI:
         ## Create sudoku grid
         self.sudoku = Frame(self.sudoku_and_score)
         self.s_tiles = [[None for i in range(9)] for j in range(9)]
-
         vcmd = (master.register(self.is_num), '%d', '%i', '%P', '%s', '%S', '%v', '%V', '%W')
         for x in range(9):
             for y in range(9):
@@ -162,22 +178,23 @@ class ClientQUI:
         self.notifybox.grid(            row=0, column=3, rowspan=3, columnspan=5, sticky=W + E + S + N)
         self.sudoku_and_score.grid(     row=4, column=3, rowspan=3, columnspan=5, sticky=W + E + S + N)
 
-        self.clients = []
+        # self.clients = []
 
-    ## Server notification calls:
-    def insert_notification(self, msg):
-        # Server notification or GUI calls this
+    ## The following functions are called by server notifications ##
+    # Inserts a text into notification list. Scrolls to the end of the list
+    def insert_notification(self, msg):  # other GUI interactions may call this also
         self.notifybox.configure(state='normal')
         self.notifybox.insert(END, msg + '\n')
         self.notifybox.see(END)
         self.notifybox.configure(state='disabled')
 
+    # Allows to insert and notify about a new game session
     def insert_new_session(self, sess_name):
-        # Server notification calls this
         if sess_name not in self.session_list.get(0, END):
             self.session_list.insert(END, sess_name)
             self.insert_notification("New session '%s' available" % sess_name)
 
+    # Removes a closing session. If client is in the session, sest current_session to None
     def remove_session(self, sess_name):
         # Server notification calls this
         if sess_name in self.session_list.get(0, END):
@@ -188,8 +205,8 @@ class ClientQUI:
             self.current_session = None
             self.disable_sudoku('Session has ended')
 
+    # Shows session scores. Scores are cleared, when not in an active session
     def insert_scores(self, lst=""):
-        # Server notification calls this
         if self.current_session is None:
             lst = ""
         self.score_list.configure(state='normal')
@@ -197,16 +214,17 @@ class ClientQUI:
         self.score_list.insert(END, '\n'.join(lst))
         self.score_list.configure(state='disabled')
 
+    # Updates the Sudoku 9x9 grid
     def insert_sudoku_state(self, string):
-        # server notification should call it, game starts
         insertions = string.split(',')
-        for i in range(len(insertions)):  # if len == 81 ?????
+        for i in range(len(insertions)):
             x, y = i // 9, i % 9
             value, how = insertions[i][0], insertions[i][1]
             self.insert_sudoku_cell(value, how, x, y)
 
+    # Manipulates with a single Sudoku cell. Correct entries are set disabled,
+    # so they cannot be changed
     def insert_sudoku_cell(self, value, how, x, y):
-        # Manipulating single Sudoku cell
         self.s_tiles[x][y].config(state='normal')
         self.s_tiles[x][y].delete(0, END)
         if value != '0':
@@ -214,7 +232,29 @@ class ClientQUI:
         if how == 'f':
             self.s_tiles[x][y].config(state='disabled')
 
-    ## Bound to GUI events:
+    # Called when client is in a room, which's game has ended
+    def leave_finished_session(self):
+        if self.current_session is None:
+            return
+        self.outcon.leave_room(self.current_session)
+        self.current_session = None
+        self.master.title('Sudoku')
+        self.disable_sudoku()
+
+    # Called when the server has stopped
+    def close_ungracefully(self):
+        self.master.withdraw()
+        tkMessageBox.showerror('Terminating', 'Server shut down')
+        logging.info('Window closing')
+        self.master.destroy()
+
+    # Called once when client joins the server. Updates currently available session list
+    def add_all_rooms_clients(self, rooms, clients):
+        self.clients = clients
+        map(lambda x: self.session_list.insert(END, x), rooms)
+
+    ## The following functions are bound to GUI events ##
+    # Validates Sudoku grid entry. Checks if its a number
     def is_num(self, action, index, value_if_allowed, prior_value, text, validation_type, trigger_type, widget_name):
         # validating Sudoku entries, only allows numbers 1...9
         if action == '1':  # action=1 -> insert
@@ -225,8 +265,10 @@ class ClientQUI:
             if text in '123456789':  # allow only 1...9 in cell
                 return True
             return False
-        return True  # disable deleting
+        return True  # enable deleting
 
+    # Called when numkey released.
+    # Calls server to insert a number into Sudoku
     def act_upon_sudoku_insert(self, event):
         w = event.widget
         if len(w.get()) == 0:
@@ -237,13 +279,14 @@ class ClientQUI:
         x,y = list(str(w)[-2:])
         if self.s_tiles[int(x)][int(y)]['state'] == 'disabled':
             return
-        com.send_move(self.current_session, str(w)[-2:][::-1]+str(value) )
-        # fn call to server...
+        com.send_move(self.current_session, str(w)[-2:][::-1]+str(value))
 
+    # Called when 'Create' button is pressed.
+    # If in a active room, ask client to leave it. Then asks server to create a room
+    # and waits for a fail/success reply
     def create_session(self, evt):
         if not self.leave_session(None):
             return
-        # Called when 'Create' button is pressed
         result = MyDialog(self.master).result
         if result is None:
             return
@@ -256,14 +299,13 @@ class ClientQUI:
         else:
             self.insert_notification("Failed to create '%s' for %d" % (sess_name, player_count))
 
+    # Called when 'Leave' button is pressed or when window closes or when changing session
     def leave_session(self, evt):
-        # Called when 'Leave' button is pressed or when window closes or when changing session
         if self.current_session is None:
             return True
         if not tkMessageBox.askyesno('Are you sure?', 'About to leave active session...'):
             return False
-        # ask server to leave session
-        self.outcon.leave_room(self.current_session)
+        self.outcon.leave_room(self.current_session)  # notifies server about leaving session
         self.insert_notification("Left room %s" %(self.current_session))
         self.current_session = None
         self.master.title('Sudoku')
@@ -271,16 +313,8 @@ class ClientQUI:
         gui.insert_scores("  ")
         return True
 
-    def leave_finished_session(self):
-        if self.current_session is None:
-            return
-        self.outcon.leave_room(self.current_session)
-        self.current_session = None
-        self.master.title('Sudoku')
-        self.disable_sudoku()
-
+    # Selecting session from session list calls this. Initiates joining a session
     def set_active_session(self, evt):
-        # selecting session from session list calls this
         w = evt.widget
         value = None
         if len(w.curselection()) != 0:
@@ -289,12 +323,14 @@ class ClientQUI:
             return
         self.join_session(value)
 
+    # Disables Sudoku grid, when it's not in use
     def disable_sudoku(self, notify_msg=''):
         if notify_msg != '':
             self.insert_notification(notify_msg)
         for i in range(81):
             self.s_tiles[i//9][i%9].config(state='disabled')
 
+    # Asks the server to join a game
     def join_session(self, sess_name):
         if self.leave_session(None):
             self.disable_sudoku('Joining session...')
@@ -307,20 +343,16 @@ class ClientQUI:
                 self.master.title('Sudoku')
             self.disable_sudoku()
 
+    # Called when client wanted to close the application.
+    # Tells the server it's about to leave
     def on_closing(self, notify_server=True):
         if self.leave_session(None):
             self.master.destroy()
             logging.info('Window closing')
             self.outcon.stop(notify_server)
 
-    def close_ungracefully(self):
-        self.master.withdraw()
-        tkMessageBox.showerror('Terminating', 'Server shut down')
-        logging.info('Window closing')
-        self.master.destroy()
-
-
-    #####################
+    ##Varia##
+    # Return whether tk has been killed or not
     def is_running(self):
         try:
             self.master.state()
@@ -328,21 +360,17 @@ class ClientQUI:
         except TclError:
             return False
 
+    # gives GUI a handle for communicating with the server
     def register_con(self, outcon):
         self.outcon = outcon
 
-    def add_all_rooms_clients(self, rooms, clients):
-        self.clients = clients
-        map(lambda x: self.session_list.insert(END, x), rooms)
-
-    # def add_client(self, client):
-    #     if client not in self.clients:
-    #         self.clients.append(client)
-    #         self.insert_notification("%s joined server" % client)
 
 
+# Sets up a thread which listens for server notifications.
+# Listens on /*server_name*/direct_notify exchange, with routing key 'all_clients'.
+# Additional keys are binded, when client connects to a session. (unbinded on leave)
+# These server calls in turn call GUI functions
 class Notifications(Thread):
-    # Server calls these RPC functions to notify client
     def __init__(self, gui, server_name):
         self.server_name = server_name
         self.gui = gui
@@ -355,7 +383,7 @@ class Notifications(Thread):
         self.ch.queue_bind(exchange=self.server_name + 'direct_notify',
                            queue=self.notification_queue, routing_key='all_clients')
         self.ch.basic_consume(self.on_receive, no_ack=True, queue=self.notification_queue)
-        self.loop = Event()
+        self.loop = Event()  # used to kill the thread
 
     def run(self):
         self.loop.set()
@@ -378,38 +406,37 @@ class Notifications(Thread):
     def on_receive(self, ch, method, props, body):
         if not self.gui.is_running(): return
         logging.debug('NOTIFICATION: ' + body)
-        if body.startswith('receive_msg_from:'):
-            _, who, room, msg = body.split(':')
-            self.gui.insertchattext(room, who, msg)
-
-        elif body.startswith('receive_notification:'):
+        # if body.startswith('receive_msg_from:'):
+        #     _, who, room, msg = body.split(':')
+        #     self.gui.insertchattext(room, who, msg)
+        if body.startswith('receive_notification:'):  # misc notification message from the server
             self.gui.insert_notification("Server notification: " + body.split(':')[1])
 
-        # elif body.startswith('notify_new_client:'):
-        #     self.gui.add_client(body.split(':')[1])
+        elif body.startswith('notify_new_client:'):  # a client joined the server
+            self.gui.insert_notification("'%s' has joined server" % body.split(':')[1])
 
-        elif body.startswith('notify_client_left:'):
+        elif body.startswith('notify_client_left:'):  # a client left the server
             self.gui.insert_notification("Client '%s' left server" % body.split(':')[1])
 
-        elif body.startswith('notify_joined_room:'):
+        elif body.startswith('notify_joined_room:'):  # a client joined the current Sudoku session
             _, name, room = body.split(':')
             self.gui.insert_notification("'%s' joined session '%s'" % (name, room))
 
-        elif body.startswith('notify_left_room:'):
+        elif body.startswith('notify_left_room:'):  # a client left the current Sudoku session
             _, name, room = body.split(':')
             self.gui.insert_notification("'%s' left session '%s'" % (name, room))
 
-        elif body.startswith('notify_new_room:'):
+        elif body.startswith('notify_new_room:'):  # a client has created a new room
             self.gui.insert_new_session(body.split(':')[1])
             self.gui.insert_notification("Room '%s' has been opened" % body.split(':')[1])
 
-        elif body.startswith('notify_room_closed:'):
+        elif body.startswith('notify_room_closed:'):  # room closes, when it's player count <= 1
             self.gui.remove_session(body.split(':')[1])
 
-        elif body.startswith('notify_game_start:'):
+        elif body.startswith('notify_game_start:'):  # game starts, enough players joined
             self.gui.insert_notification("Game has Started")
 
-        elif body.startswith('notify_game_state:'):
+        elif body.startswith('notify_game_state:'):  # updates Sudoku grid
             _, players, points, sudoku_board = body.split(':')
             #  check if game has ended and not still at splash screen (waiting other players)
             if ' ' not in sudoku_board and not (sudoku_board.count('0')==28 and sudoku_board.count('8')==53):
@@ -424,20 +451,26 @@ class Notifications(Thread):
             self.gui.insert_scores(scores)
             self.gui.insert_sudoku_state(sudoku_board)
 
-        elif body.startswith('notify_winner:'):
+        elif body.startswith('notify_winner:'):  # session has ended, winner declared
             _, room, names = body.split(':')
             self.gui.insert_notification("Winner(s) in room %s: %s" % (room, names))
             self.gui.leave_finished_session()
 
-        elif body.startswith('Stopping:'):
+        elif body.startswith('Stopping:'):  # server says it is shutting down
             self.stop()
             self.gui.close_ungracefully()
         else:
             logging.debug('Faulty request [%s]' % body)
 
 
+# Client uses these RPC functions to communicate with server
+# based on https://www.rabbitmq.com/tutorials/tutorial-six-python.html
+# Setup of the RPC in pika & RabbitMQ:
+#   1. server creates an exclusive /*server_name*/rpc_queue, which is bound to /*server_name*/direct_notify exchange
+#   2. client creates it's own queue, where it receives the RPC replies
+# When client does a RPC, the call includes a correlationID for reply identification
+# and also where the it expects the response. Then it waits until it has received the response or gets a timeout error.
 class Communication(object):
-    # Client uses these RPC functions to communicate with server
     def __init__(self, gui, server_name):
         self.server_name = server_name
         self.name = 'None'
@@ -446,7 +479,7 @@ class Communication(object):
         self.ch = self.connection.channel()
 
         result = self.ch.queue_declare(exclusive=True)
-        self.callback_queue = result.method.queue
+        self.callback_queue = result.method.queue  # expect RPC replies here
         self.ch.queue_bind(exchange=self.server_name + 'direct_rpc', queue=self.callback_queue)
         self.ch.basic_consume(self.on_response, no_ack=True, queue=self.callback_queue)
 
@@ -454,6 +487,7 @@ class Communication(object):
         self.receive_notifications = None
         gui.register_con(self)  # give GUI handler for calling communication functions
 
+    # Stops the notification thread and tells the server, it has left
     def stop(self, notify_server=True):
         if self.receive_notifications is not None:
             self.receive_notifications.stop()
@@ -463,10 +497,13 @@ class Communication(object):
             self.call('leave:' + self.name)
         logging.debug('Stopped communication...')
 
+    # Checks for correct RPC response correlation ID.
+    # If it matches, we have a response from the server
     def on_response(self, ch, method, props, body):
         if self.corr_id == props.correlation_id:
             self.response = body
 
+    # Initiates a RPC call. Waits for the reply or gets timeout
     def call(self, body):
         self.response = None
         self.corr_id = str(uuid4())
@@ -486,6 +523,8 @@ class Communication(object):
         logging.debug('RPC response: [%s]' % self.response)
         return self.response
 
+    # Asks if the server accepts the name.
+    # If server accepted, starts notification thread
     def request_name_ok(self, name):
         self.name = name
         logging.debug('Requesting name [%s]' % name)
@@ -506,44 +545,47 @@ class Communication(object):
         self.receive_notifications.start()
         return True
 
-    def leave_room(self, chat_name):
+    def leave_room(self, chat_name):  # Tell the server about leaving a room
         self.call('leave_room' + ':' + self.name + ':' + chat_name)
         self.receive_notifications.unbind_queue(chat_name)
 
-    def join_room(self, chat_name):
+    def join_room(self, chat_name):  # Tell the server about joining a room
         self.receive_notifications.bind_queue(chat_name)
         self.call('join_room' + ':' + self.name + ':' + chat_name)
 
+    # Ask the server to create a room. The server checks if the room name is available
     def create_room(self, chat_name, room_size):
         body = 'create_room' + ':' + chat_name + ':' + str(room_size)
         return True if self.call(body) == 'True' else False
 
-    def send_move(self, chat_name, move):
-        self.call('move' + ':' + chat_name + ':' + self.name + ':' + move)
+    # Ask the server to put a number to a Sudoku grid
+    def send_move(self, sess_name, move):
+        self.call('move' + ':' + sess_name + ':' + self.name + ':' + move)
 
 
+# Start looking for servers
 server_finder = ServerFinder()
 server_name = server_finder.return_server_name()
-if server_name is None:
+if server_name is None:  # client didn't select a server
     exit()
 
+# Start GUI
 root = Tk()
 root.withdraw()  # hide TK for name confirmation period
 gui = ClientQUI(root)
-
 
 try:
     com = Communication(gui, server_name)
 
     info_text = "Connecting..."
-    while True:
+    while True:  # loop till we get an acceptable name
         MY_NAME = tkSimpleDialog.askstring(info_text, "Enter your name")
-        if MY_NAME == '' or MY_NAME is None:  # don't start application
+        if MY_NAME == '' or MY_NAME is None:  # don't start application, client specified no name or closed the app
             gui.on_closing(notify_server=False)
             break
-        if not all(c.isalnum() for c in MY_NAME) or len(MY_NAME) < 2:
-            continue
         info_text = 'Name refused'
+        if not all(c.isalnum() for c in MY_NAME) or len(MY_NAME) < 2:  # improper name
+            continue
         result = com.request_name_ok(MY_NAME)
         if result is None:  # server timeout
             break
@@ -555,7 +597,6 @@ try:
                 logging.debug('CTRL-C pressed...')
                 gui.on_closing()
             break
-
 except pika.exceptions.ChannelClosed:
     logging.info('No server found...')
 
