@@ -107,7 +107,7 @@ def make_sudoku(rem = 2):
 #Sudoku class that creates a sudoku and has the functions it needs.
 class Sudoku():
     def __init__(self,level):
-        self.current,self.solved=make_sudoku(level)
+        self.current, self.solved=make_sudoku(level)
 
         self.splash_screen = self.create_splash_screen()
 

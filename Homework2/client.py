@@ -116,7 +116,7 @@ class ClientQUI:
         self.leave_button.bind("<Button-1>", self.leave_session)
 
         ## Display notifications here
-        self.notifybox = ScrolledText(master, state='disabled', height=3, width=43)
+        self.notifybox = ScrolledText(master, state='disabled', height=5, width=43)
 
         ## Create sessions list
         self.session_frame = Frame(master)
@@ -135,7 +135,6 @@ class ClientQUI:
         ## Create sudoku grid
         self.sudoku = Frame(self.sudoku_and_score)
         self.s_tiles = [[None for i in range(9)] for j in range(9)]
-
 
         vcmd = (master.register(self.is_num), '%d', '%i', '%P', '%s', '%S', '%v', '%V', '%W')
         for x in range(9):
@@ -187,6 +186,7 @@ class ClientQUI:
         if self.current_session == sess_name:
             self.master.title('Sudoku')
             self.current_session = None
+            self.disable_sudoku('Session has ended')
 
     def insert_scores(self, lst=""):
         # Server notification calls this
@@ -241,14 +241,14 @@ class ClientQUI:
         # fn call to server...
 
     def create_session(self, evt):
+        if not self.leave_session(None):
+            return
         # Called when 'Create' button is pressed
         result = MyDialog(self.master).result
         if result is None:
             return
         sess_name, player_count = result[0], result[1]
         success = self.outcon.create_room(sess_name, player_count)
-
-
         if success:
             self.insert_notification("Created game '%s' for %d" % (sess_name, player_count))
             self.insert_new_session(sess_name)  # testing - delete it
@@ -268,8 +268,16 @@ class ClientQUI:
         self.current_session = None
         self.master.title('Sudoku')
         self.disable_sudoku('Join or create a Sudoku session')
-        gui.insert_scores("  ") #TODO Clear score when player leaves room
+        gui.insert_scores("  ")
         return True
+
+    def leave_finished_session(self):
+        if self.current_session is None:
+            return
+        self.outcon.leave_room(self.current_session)
+        self.current_session = None
+        self.master.title('Sudoku')
+        self.disable_sudoku()
 
     def set_active_session(self, evt):
         # selecting session from session list calls this
@@ -305,6 +313,12 @@ class ClientQUI:
             logging.info('Window closing')
             self.outcon.stop(notify_server)
 
+    def close_ungracefully(self):
+        self.master.withdraw()
+        tkMessageBox.showerror('Terminating', 'Server shut down')
+        logging.info('Window closing')
+        self.master.destroy()
+
 
     #####################
     def is_running(self):
@@ -321,10 +335,10 @@ class ClientQUI:
         self.clients = clients
         map(lambda x: self.session_list.insert(END, x), rooms)
 
-    def add_client(self, client):
-        if client not in self.clients:
-            self.clients.append(client)
-            self.insert_notification("%s joined server" % client)
+    # def add_client(self, client):
+    #     if client not in self.clients:
+    #         self.clients.append(client)
+    #         self.insert_notification("%s joined server" % client)
 
 
 class Notifications(Thread):
@@ -371,20 +385,19 @@ class Notifications(Thread):
         elif body.startswith('receive_notification:'):
             self.gui.insert_notification("Server notification: " + body.split(':')[1])
 
-        elif body.startswith('notify_new_client:'):
-            self.gui.add_client(body.split(':')[1])
+        # elif body.startswith('notify_new_client:'):
+        #     self.gui.add_client(body.split(':')[1])
 
         elif body.startswith('notify_client_left:'):
-            #TODO wat
             self.gui.insert_notification("Client '%s' left server" % body.split(':')[1])
 
         elif body.startswith('notify_joined_room:'):
             _, name, room = body.split(':')
-            self.gui.insert_notification("'%s' joined chat '%s'" % (name, room))
+            self.gui.insert_notification("'%s' joined session '%s'" % (name, room))
 
         elif body.startswith('notify_left_room:'):
             _, name, room = body.split(':')
-            self.gui.insert_notification("'%s' left chat '%s'" % (name, room))
+            self.gui.insert_notification("'%s' left session '%s'" % (name, room))
 
         elif body.startswith('notify_new_room:'):
             self.gui.insert_new_session(body.split(':')[1])
@@ -398,8 +411,9 @@ class Notifications(Thread):
 
         elif body.startswith('notify_game_state:'):
             _, players, points, sudoku_board = body.split(':')
-            if ' ' not in sudoku_board:
-                self.gui.insert_notification("Waiting for players...")
+            #  check if game has ended and not still at splash screen (waiting other players)
+            if ' ' not in sudoku_board and not (sudoku_board.count('0')==28 and sudoku_board.count('8')==53):
+                self.gui.leave_finished_session()
 
             players = players.split(',')
             points = points.split(',')
@@ -411,12 +425,13 @@ class Notifications(Thread):
             self.gui.insert_sudoku_state(sudoku_board)
 
         elif body.startswith('notify_winner:'):
-            _, room, player = body.split(':')
-            self.gui.insert_notification("%s has won in room %s" % (player,room))
+            _, room, names = body.split(':')
+            self.gui.insert_notification("Winner(s) in room %s: %s" % (room, names))
+            self.gui.leave_finished_session()
+
         elif body.startswith('Stopping:'):
             self.stop()
-            tkMessageBox.showerror('Server shut down', 'Terminating')
-            self.gui.on_closing(notify_server=False)
+            self.gui.close_ungracefully()
         else:
             logging.debug('Faulty request [%s]' % body)
 
@@ -523,12 +538,12 @@ try:
     info_text = "Connecting..."
     while True:
         MY_NAME = tkSimpleDialog.askstring(info_text, "Enter your name")
+        if MY_NAME == '' or MY_NAME is None:  # don't start application
+            gui.on_closing(notify_server=False)
+            break
         if not all(c.isalnum() for c in MY_NAME) or len(MY_NAME) < 2:
             continue
         info_text = 'Name refused'
-        if MY_NAME == '' or MY_NAME is None:  # don't start application
-            gui.on_closing()
-            break
         result = com.request_name_ok(MY_NAME)
         if result is None:  # server timeout
             break

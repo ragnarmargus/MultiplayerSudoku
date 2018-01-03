@@ -116,7 +116,6 @@ class Server:
             _, room, player, move = body.split(':')
             self.check_move(player, room, move)
             resp = 'True'
-
         else:
             print 'Faulty request [%s]' % body
             resp = 'False'
@@ -176,7 +175,7 @@ class Server:
             self.notify_clients('notify_joined_room', name + ':' + room, room)
             print 'Added [%s] to room [%s]' % (name, room)
 
-            if (len(self.rooms[room].players) >= self.rooms[room].size) and (not self.rooms[room].started):  # remove empty room
+            if (len(self.rooms[room].players) >= self.rooms[room].size) and (not self.rooms[room].started):
                 self.notify_clients('notify_game_start', "", room)
                 self.rooms[room].started = True
                 self.send_game_state(room)
@@ -198,22 +197,27 @@ class Server:
         return True
 
     # TODO Start new game when the last one finishes OR kick all players when finished
-    def send_game_state(self,room):
+    def send_game_state(self, room):
         self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +
                             ':' + ','.join(str(x) for x in self.rooms[room].scores) +
                             ':' + self.rooms[room].game.sudoku_to_string_without_table(), room)
 
-    def send_start_screen(self,room):
+    def send_start_screen(self, room):
         self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +
                             ':' + ','.join(str(x) for x in self.rooms[room].scores) +
                             ':' + self.rooms[room].game.splash_screen_without_table(), room)
 
-    def check_move(self,player,room,move):
+    def check_move(self, player, room, move):
         rsp = self.rooms[room].game.set_nr(list(move))
-        if rsp == 2:
-            self.notify_clients('notify_winner', room + ':' + self.rooms[room].players[self.rooms[room].scores.index(max(self.rooms[room].scores))])
-            self.rooms[room].finished = True
         self.rooms[room].scores[(self.rooms[room].players.index(player))] += rsp
+        if rsp == 2:
+            self.rooms[room].scores[(self.rooms[room].players.index(player))] -= 1
+            names = []
+            for i in range(len(self.rooms[room].players)):
+                if self.rooms[room].scores[i] == max(self.rooms[room].scores):
+                    names.append(self.rooms[room].players[i])
+            self.notify_clients('notify_winner', room + ':' + ', '.join(names))
+            self.rooms[room].finished = True
         self.send_game_state(room)
 
 server = Server()
