@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from Tkinter import *
+from sys import exit
 import tkMessageBox
 import logging
 import tkSimpleDialog
@@ -9,7 +10,7 @@ from uuid import uuid4
 from threading import Thread, Event
 import tkMessageBox
 from dialog2 import MyDialog
-import time
+from time import time
 
 import logging
 logging.basicConfig(level=logging.DEBUG,\
@@ -21,7 +22,86 @@ KB_map = {1: 'KP_End', 2: 'KP_Down', 3: 'KP_Next', 4: 'KP_Left',
           5: 'KP_Begin', 6: 'KP_Right', 7: 'KP_Home', 8: 'KP_Up', 9: 'KP_Prior'}
 
 
+class ServerFinder:
+    def __init__(self):
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+        self.channel = self.connection.channel()
+        result = self.channel.queue_declare(exclusive=True)
+        self.queue_name = result.method.queue
+        self.channel.queue_bind(exchange='online_servers', queue=self.queue_name, routing_key='server_names')
+        self.channel.basic_consume(self.pika_callback, queue=self.queue_name)
 
+        self.master = Tk()
+        self.master.title('Search')
+
+        self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.srv_frame = Frame(self.master)
+        self.srv_list = Listbox(self.srv_frame, exportselection=0)
+        self.srv_scroll = Scrollbar(self.srv_frame, orient="vertical")
+        self.srv_label = Label(self.srv_frame, text='Available servers:')
+        self.srv_label.pack(fill='y')
+        self.srv_list.pack(side="left", fill="y")
+        self.srv_scroll.pack(side="right", fill="y")
+        self.srv_list.config(yscrollcommand=self.srv_scroll.set)
+        self.srv_scroll.config(command=self.srv_list.yview)
+        self.srv_list.bind("<<ListboxSelect>>", self.get_server)
+        self.srv_frame.grid()
+
+        self.server = None
+        self.server_names = dict()
+
+        self.is_closing = Event()
+
+        self.install_find_server_callback()
+        try:
+            self.is_closing.clear()
+            self.master.mainloop()
+        except KeyboardInterrupt:
+            self.server = None
+
+    def pika_callback(self, ch, method, properties, body):
+        try:
+            name, last_update = body.split('#')
+            if last_update == 'dead':
+                self.server_names[name] = 0
+            else:
+                self.server_names[name] = int(last_update)/10
+        except:
+            pass
+
+    def install_find_server_callback(self):
+        def find_event():
+            try:
+                for i in range(100): self.connection.process_data_events()
+                self.srv_list.delete(0, END)
+                map(lambda x: self.srv_list.insert(END, x),
+                    filter(lambda x: self.server_names[x] >= time() - 3, self.server_names))
+                if not self.is_closing.is_set():
+                    self.master.after(1000 // 100, find_event)
+                else:
+                    self.master.destroy()
+                    self.connection.close()
+            except:
+                self.master.destroy() #  channel closed
+        if not self.is_closing.is_set():
+            self.master.after(1000 // 100, find_event)
+        else:
+            self.master.destroy()
+            self.connection.close()
+
+    def return_server_name(self):
+        return self.server
+
+    def get_server(self, evt):
+        # selecting session from session list calls this
+        w = evt.widget
+        if len(w.curselection()) != 0:
+            print self.srv_list.get(w.curselection()[0])
+            self.server = self.srv_list.get(w.curselection()[0])
+            self.on_closing()
+
+    def on_closing(self):
+        self.is_closing.set()
 
 
 class ClientQUI:
@@ -222,11 +302,11 @@ class ClientQUI:
                 self.master.title('Sudoku')
             self.disable_sudoku()
 
-    def on_closing(self):
+    def on_closing(self, notify_server=True):
         if self.leave_session(None):
             self.master.destroy()
             logging.info('Window closing')
-            com.call('leave:' + com.name)
+            self.outcon.stop(notify_server)
 
 
     #####################
@@ -245,16 +325,15 @@ class ClientQUI:
         map(lambda x: self.session_list.insert(END, x), rooms)
 
     def add_client(self, client):
-
         if client not in self.clients:
             self.clients.append(client)
             self.insert_notification("%s joined server" % client)
 
 
-
 class Notifications(Thread):
     # Server calls these RPC functions to notify client
-    def __init__(self, gui):
+    def __init__(self, gui, server_name):
+        self.server_name = server_name
         self.gui = gui
         Thread.__init__(self)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
@@ -262,7 +341,8 @@ class Notifications(Thread):
         self.setDaemon(daemonic=True)
         result = self.ch.queue_declare(exclusive=True)
         self.notification_queue = result.method.queue
-        self.ch.queue_bind(exchange='direct_notify', queue=self.notification_queue, routing_key='all_clients')
+        self.ch.queue_bind(exchange=self.server_name + 'direct_notify',
+                           queue=self.notification_queue, routing_key='all_clients')
         self.ch.basic_consume(self.on_receive, no_ack=True, queue=self.notification_queue)
         self.loop = Event()
 
@@ -277,10 +357,12 @@ class Notifications(Thread):
         self.loop.clear()
 
     def bind_queue(self, bind_to):
-        self.ch.queue_bind(exchange='direct_notify', queue=self.notification_queue, routing_key=bind_to)
+        self.ch.queue_bind(exchange=self.server_name + 'direct_notify',
+                           queue=self.notification_queue, routing_key=bind_to)
 
     def unbind_queue(self, unbind):
-        self.ch.queue_unbind(exchange='direct_notify', queue=self.notification_queue, routing_key=unbind)
+        self.ch.queue_unbind(exchange=self.server_name + 'direct_notify',
+                             queue=self.notification_queue, routing_key=unbind)
 
     def on_receive(self, ch, method, props, body):
         if not self.gui.is_running(): return
@@ -337,15 +419,15 @@ class Notifications(Thread):
         elif body.startswith('Stopping:'):
             self.stop()
             tkMessageBox.showerror('Server shut down', 'Terminating')
-            self.gui.stop()
+            self.gui.on_closing(notify_server=False)
         else:
             logging.debug('Faulty request [%s]' % body)
 
 
-
 class Communication(object):
     # Client uses these RPC functions to communicate with server
-    def __init__(self, gui):
+    def __init__(self, gui, server_name):
+        self.server_name = server_name
         self.name = 'None'
 
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
@@ -353,7 +435,7 @@ class Communication(object):
 
         result = self.ch.queue_declare(exclusive=True)
         self.callback_queue = result.method.queue
-        self.ch.queue_bind(exchange='direct_rpc', queue=self.callback_queue)
+        self.ch.queue_bind(exchange=self.server_name + 'direct_rpc', queue=self.callback_queue)
         self.ch.basic_consume(self.on_response, no_ack=True, queue=self.callback_queue)
 
         self.gui = gui
@@ -376,7 +458,7 @@ class Communication(object):
     def call(self, body):
         self.response = None
         self.corr_id = str(uuid4())
-        self.ch.basic_publish(exchange='direct_rpc', routing_key='rpc_queue',
+        self.ch.basic_publish(exchange=self.server_name + 'direct_rpc', routing_key='rpc_queue',
                               properties=pika.BasicProperties(reply_to = self.callback_queue,
                                                               correlation_id = self.corr_id, ),
                               body=body)
@@ -407,7 +489,7 @@ class Communication(object):
         self.gui.add_all_rooms_clients(rooms, clients)
         self.gui.insert_notification('Successfully joined server with name %s' % name)
         # start receiving notifications
-        self.receive_notifications = Notifications(self.gui)
+        self.receive_notifications = Notifications(self.gui, self.server_name)
         self.receive_notifications.bind_queue(name)
         self.receive_notifications.start()
         return True
@@ -428,13 +510,18 @@ class Communication(object):
         self.call('move' + ':' + chat_name + ':' + self.name + ':' + move)
 
 
+server_finder = ServerFinder()
+server_name = server_finder.return_server_name()
+if server_name is None:
+    exit()
+
 root = Tk()
 root.withdraw()  # hide TK for name confirmation period
 gui = ClientQUI(root)
 
 
 try:
-    com = Communication(gui)
+    com = Communication(gui, server_name)
 
     info_text = "Connecting..."
     while True:

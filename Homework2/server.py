@@ -1,6 +1,33 @@
 #!/usr/bin/env python
 import pika
 from sudoku import *
+from threading import Event
+from time import time
+
+
+# class AdvertiseSelf(Thread):
+#     def __init__(self, channel, name):
+#         self.my_name = name
+#         self.channel = channel
+#         self.channel.exchange_declare(exchange='online_servers', exchange_type='direct')
+#         Thread.__init__(self)
+#         self.loop = Event()
+#
+#     def run(self):
+#         self.loop.set()
+#         print 'Notifying itself...'
+#         while self.loop.is_set():
+#             self.channel.basic_publish(exchange='online_servers', routing_key='server_names',
+#                                       body=self.my_name + '#' + str(int(time()*10)),
+#                                       properties=pika.BasicProperties())
+#         self.channel.basic_publish(exchange='online_servers', routing_key='server_names',
+#                                    body=self.my_name + '#dead',
+#                                    properties=pika.BasicProperties())
+#         print 'Stopped notifying itself...'
+#
+#     def stop(self):
+#         self.loop.clear()
+
 
 class Room:
     def __init__(self, game_name, room_size):
@@ -14,37 +41,56 @@ class Room:
 
 
 class Server:
-    def __init__(self, server_name):
-        self.server_name = server_name
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
-        self.ch = self.connection.channel()
+    def __init__(self):
+        i = 0
+        while True:  # Loop untill a exclusive access to a queue is got (this means, server name is available)
+            try:
+                self.server_name = 'Server' + str(i)
+                self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+                self.ch = self.connection.channel()
+                self.ch.queue_declare(queue='servers_online')
+                self.ch.queue_declare(queue=self.server_name + 'rpc_queue', exclusive=True)
+                print 'Server shall use name [%s] ' % self.server_name
+                break
+            except pika.exceptions.ChannelClosed as e:
+                i += 1
 
-        self.ch.queue_declare(queue=server_name+'rpc_queue', exclusive=True)
-        self.ch.exchange_declare(exchange=server_name+'direct_notify', exchange_type='direct')
-        self.ch.exchange_declare(exchange=server_name+'direct_rpc', exchange_type='direct')
+        self.ch.queue_declare(queue=self.server_name+'rpc_queue', exclusive=True)
+        self.ch.exchange_declare(exchange=self.server_name+'direct_notify', exchange_type='direct')
+        self.ch.exchange_declare(exchange=self.server_name+'direct_rpc', exchange_type='direct')
 
-        self.ch.queue_bind(exchange=server_name+'direct_rpc', queue=server_name+'rpc_queue', routing_key='rpc_queue')
-        self.ch.basic_consume(self.on_request, queue=server_name+'rpc_queue')
+        self.ch.queue_bind(exchange=self.server_name+'direct_rpc', queue=self.server_name+'rpc_queue', routing_key='rpc_queue')
+        self.ch.basic_consume(self.on_request, queue=self.server_name+'rpc_queue')
 
         self.clients = []
         self.rooms = {}
 
-        self.ch.queue_declare(queue='servers_online')
-        self.ch.basic_publish(exchange='', routing_key='servers_online',
-                              body=self.server_name+'-up',properties=pika.BasicProperties( delivery_mode=2,  # make message persistent
-                                                                                            ))
+        self.ch.exchange_declare(exchange='online_servers', exchange_type='direct')
+        self.looping = Event()
+
 
     def loop(self):
+        self.looping.set()
         print 'Start consuming...'
-        self.ch.start_consuming()
+        #self.ch.start_consuming()
+        last_notification_at = 0
+        while self.looping.is_set():
+            self.connection.process_data_events()
+            if last_notification_at + 1 < time():
+                last_notification_at = time()
+                self.ch.basic_publish(exchange='online_servers', routing_key='server_names',
+                                      body=self.server_name + '#' + str(int(time()*10)),
+                                      properties=pika.BasicProperties())
+        self.ch.basic_publish(exchange='online_servers', routing_key='server_names',
+                              body=self.server_name + '#dead',
+                              properties=pika.BasicProperties())
 
     def stop(self):
+        self.looping.clear()
         if len(self.clients) != 0:
             self.notify_clients('Stopping', 'Stopping')
-        self.ch.basic_publish(exchange='', routing_key='servers_online',
-                              body=self.server_name + '-down',
-                              properties=pika.BasicProperties(delivery_mode=2,  # make message persistent
-                                                              ))
+        # self.advertizer.stop()
+        # self.advertizer.join()
         self.ch.stop_consuming()
         print 'Stop consuming...'
 
@@ -79,7 +125,7 @@ class Server:
         else:
             print 'Faulty request [%s]' % body
             resp = 'False'
-        self.ch.basic_publish(exchange='direct_rpc', routing_key=props.reply_to,
+        self.ch.basic_publish(exchange=self.server_name + 'direct_rpc', routing_key=props.reply_to,
                               properties=pika.BasicProperties(correlation_id=props.correlation_id), body=resp)
         print 'REGUEST response:', resp
         self.ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -89,12 +135,6 @@ class Server:
         print 'NOTIFY - key [%s] - msg [%s]' % (routing, msg)
         self.ch.basic_publish(exchange=self.server_name+'direct_notify', routing_key=routing, body=msg, )
 
-    # def notify_named_clients(self, header, msg, client_names):
-    #     msg = header + ':' + msg
-    #     for c in client_names:
-    #         print 'NOTIFY - key [%s] - msg [%s]' % (c, msg)
-    #         self.ch.basic_publish(exchange=self.server_name+'direct_notify', routing_key=c, body=msg, )
-
     def request_name(self, name):
         if name in self.rooms or name in self.clients:
             print 'Name [%s] not available' % name
@@ -103,7 +143,6 @@ class Server:
         print 'Added name [%s]' % name
         self.notify_clients('notify_new_client', name)
         available_rooms = self.rooms
-        print available_rooms
         return 'True:' + ','.join(available_rooms) + ':' + ','.join(self.clients)
 
     def remove_me(self, name):
@@ -131,9 +170,6 @@ class Server:
             elif len(self.rooms[room].players) == 0:  # remove empty room
                 self.notify_clients('notify_room_closed', room)
                 self.rooms.pop(room)
-
-
-
         print 'State of rooms:', str(self.rooms)
 
     def add_me_to(self, name, room):
@@ -150,7 +186,7 @@ class Server:
                 self.rooms[room].started = True
                 self.send_game_state(room)
 
-            elif(self.rooms[room].started):
+            elif self.rooms[room].started:
                 self.send_game_state(room)
             else:
                 self.send_start_screen(room)
@@ -168,25 +204,24 @@ class Server:
 
     # TODO Start new game when the last one finishes OR kick all players when finished
     def send_game_state(self,room):
-        self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +\
-                            ':' + ','.join(str(x) for x in self.rooms[room].scores) +\
+        self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +
+                            ':' + ','.join(str(x) for x in self.rooms[room].scores) +
                             ':' + self.rooms[room].game.sudoku_to_string_without_table(), room)
 
     def send_start_screen(self,room):
-        self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +\
-                            ':' + ','.join(str(x) for x in self.rooms[room].scores) +\
+        self.notify_clients('notify_game_state', ','.join(self.rooms[room].players) +
+                            ':' + ','.join(str(x) for x in self.rooms[room].scores) +
                             ':' + self.rooms[room].game.splash_screen_without_table(), room)
 
     def check_move(self,player,room,move):
         rsp = self.rooms[room].game.set_nr(list(move))
-        if rsp==2:
+        if rsp == 2:
             self.notify_clients('notify_winner', room + ':' + self.rooms[room].players[self.rooms[room].scores.index(max(self.rooms[room].scores))])
             self.rooms[room].finished = True
         self.rooms[room].scores[(self.rooms[room].players.index(player))] += rsp
         self.send_game_state(room)
 
-server_name = ''
-server = Server(server_name)
+server = Server()
 
 try:
     server.loop()

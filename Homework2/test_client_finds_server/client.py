@@ -1,30 +1,37 @@
 import pika
-from time import sleep
+from time import sleep, time
 
 connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 
 channel = connection.channel()
-channel.queue_declare(queue='servers_online') # maybe durable=True flag
-print(' [*] Waiting for messages. To exit press CTRL+C')
+channel.exchange_declare(exchange='direct_logs', exchange_type='direct')
+
+result = channel.queue_declare(exclusive=True)
+queue_name = result.method.queue
+
+channel.queue_bind(exchange='direct_logs', queue=queue_name, routing_key='server_names')
 
 # When RabbitMQ quits or crashes it will forget the queues and messages unless you tell it not to.
 # Two things are required to make sure that messages
 # aren't lost: we need to mark both the queue and messages as durable.
 
-servers_up = set()
+servers_up = dict()
 def callback(ch, method, properties, body):
     print(" [x] Received %r" % body)
-    name, status = body.split('-')
-    if status == 'up':
-        servers_up.add(name)
+    nimi, last_update = body.split('#')
+    if last_update == 'dead':
+        servers_up[nimi] = 0
     else:
-        if name in servers_up:
-            servers_up.remove(name)
+        servers_up[nimi] = int(last_update)/10
+    print len(servers_up)
 
-channel.basic_consume(callback, queue='servers_online')
+    print filter(lambda x: servers_up[x] >= time() - 3, servers_up)
 
+channel.basic_consume(callback, queue=queue_name)
 
-connection.process_data_events()
+for i in range(1000):
+    connection.process_data_events()
+    sleep(0.1)
 print 'Up servers', servers_up
 
 connection.close()

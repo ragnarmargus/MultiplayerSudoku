@@ -1,23 +1,33 @@
 import pika
-
+from time import sleep, time
+from random import randint
+from threading import Thread, Lock
 
 connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 
 channel = connection.channel()
-channel.queue_declare(queue='servers_online')  # maybe add 'durable=True' flag
+channel.exchange_declare(exchange='direct_logs', exchange_type='direct')
 
-channel.basic_publish(exchange='',
-                      routing_key='servers_online',
-                      body='Servername2-up',
-                      properties=pika.BasicProperties(
-                         delivery_mode = 2, # make message persistent
-                      ))
+l = Lock()
 
-channel.basic_publish(exchange='',
-                      routing_key='servers_online',
-                      body='Servername-down',
-                      properties=pika.BasicProperties(
-                         delivery_mode = 2, # make message persistent
-                      ))
+def fn(channel):
+    arv = randint(0, 100)
+    for i in range(1000):
+        age = int(time()*10)
+        with l:
+            msg = 'name%d#%d' % (arv, age)
+            print msg
+            channel.basic_publish(exchange='direct_logs',
+                                  routing_key='server_names',
+                                  body=msg,)
+        sleep(1)
+tts = []
+for i in range(10):
+    t = Thread(target=fn, args=(channel,))
+    t.start()
+    tts.append(t)
+
+for t in tts:
+    t.join()
 
 connection.close()
