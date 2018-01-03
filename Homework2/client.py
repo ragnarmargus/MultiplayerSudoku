@@ -62,10 +62,7 @@ class ServerFinder:
     def pika_callback(self, ch, method, properties, body):
         try:
             name, last_update = body.split('#')
-            if last_update == 'dead':
-                self.server_names[name] = 0
-            else:
-                self.server_names[name] = int(last_update)/10
+            self.server_names[name] = 0 if last_update == 'dead' else int(last_update)/10
         except:
             pass
 

@@ -72,7 +72,6 @@ class Server:
     def loop(self):
         self.looping.set()
         print 'Start consuming...'
-        #self.ch.start_consuming()
         last_notification_at = 0
         while self.looping.is_set():
             self.connection.process_data_events()
@@ -81,17 +80,13 @@ class Server:
                 self.ch.basic_publish(exchange='online_servers', routing_key='server_names',
                                       body=self.server_name + '#' + str(int(time()*10)),
                                       properties=pika.BasicProperties())
-        self.ch.basic_publish(exchange='online_servers', routing_key='server_names',
-                              body=self.server_name + '#dead',
-                              properties=pika.BasicProperties())
 
     def stop(self):
         self.looping.clear()
+        self.ch.basic_publish(exchange='online_servers', routing_key='server_names',
+                              body=self.server_name + '#dead', properties=pika.BasicProperties())
         if len(self.clients) != 0:
             self.notify_clients('Stopping', 'Stopping')
-        # self.advertizer.stop()
-        # self.advertizer.join()
-        self.ch.stop_consuming()
         print 'Stop consuming...'
 
     def on_request(self, ch, method, props, body):
