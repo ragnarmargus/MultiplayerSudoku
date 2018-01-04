@@ -172,6 +172,9 @@ y╔═══════╦═══════╦═══════╗
 
         return design
 
+    # Formats the Sudoku into string, so pika can send it.
+    # Packs 81 comma separated numbers, each number followed
+    # by a letter: 'f' - means the number is to be set unchangeable
     def sudoku_to_string_without_table(self):
 
         status = (self.current==self.solved).reshape((81))
@@ -186,6 +189,7 @@ y╔═══════╦═══════╦═══════╗
 
         return ','.join(rsp)
 
+    # Unchangeable Sudoku table shown untill the game starts
     def splash_screen_without_table(self):
         return ','.join((str(x)+ 'f' for x in self.splash_screen))
 
