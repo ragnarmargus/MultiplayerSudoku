@@ -3,7 +3,7 @@ import pika
 from sudoku import *
 from threading import Event
 from time import time
-
+from random import randint
 
 # The class holds a Sudoku instance, the rooms players and scores
 class Room:
@@ -14,7 +14,7 @@ class Room:
         self.scores = []
         self.started = False
         self.finished = False
-        self.game = Sudoku(2)
+        self.game = Sudoku(randint(6, 10))  # create 6..10 empty cells
 
 
 # Gets a unique name for the server (in the form of Server#, where # is a number)
