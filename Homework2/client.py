@@ -127,10 +127,8 @@ class ClientQUI:
         self.current_session = None  ## used for warning, when changing sess, while in a session
 
         ## Create buttons for creating and leaving sessions
-        self.create_session_button = Button(master, text="New game")
-        self.create_session_button.bind("<Button-1>", self.create_session)
-        self.leave_button = Button(master, text="Leave")
-        self.leave_button.bind("<Button-1>", self.leave_session)
+        self.create_session_button = Button(master,text='New game',command=self.create_session)
+        self.leave_button = Button(master, text="Leave",command=self.leave_session)
 
         ## Display notifications here
         self.notifybox = ScrolledText(master, state='disabled', height=5, width=43)
@@ -284,8 +282,8 @@ class ClientQUI:
     # Called when 'Create' button is pressed.
     # If in a active room, ask client to leave it. Then asks server to create a room
     # and waits for a fail/success reply
-    def create_session(self, evt):
-        if not self.leave_session(None):
+    def create_session(self):
+        if not self.leave_session():
             return
         result = MyDialog(self.master).result
         if result is None:
@@ -300,7 +298,7 @@ class ClientQUI:
             self.insert_notification("Failed to create '%s' for %d" % (sess_name, player_count))
 
     # Called when 'Leave' button is pressed or when window closes or when changing session
-    def leave_session(self, evt):
+    def leave_session(self):
         if self.current_session is None:
             return True
         if not tkMessageBox.askyesno('Are you sure?', 'About to leave active session...'):
@@ -332,7 +330,7 @@ class ClientQUI:
 
     # Asks the server to join a game
     def join_session(self, sess_name):
-        if self.leave_session(None):
+        if self.leave_session():
             self.disable_sudoku('Joining session...')
             self.outcon.join_room(sess_name)
             result, state = True, 'Waiting for players'
@@ -346,7 +344,7 @@ class ClientQUI:
     # Called when client wanted to close the application.
     # Tells the server it's about to leave
     def on_closing(self, notify_server=True):
-        if self.leave_session(None):
+        if self.leave_session():
             self.master.destroy()
             logging.info('Window closing')
             self.outcon.stop(notify_server)
